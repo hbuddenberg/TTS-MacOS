@@ -1,0 +1,31 @@
+#!/bin/bash
+# Hook de envío de prompt: Lee el prompt del usuario antes de procesarlo
+# Útil para confirmar que Claude recibió el mensaje
+
+# Configuración
+VOICE="${TTS_PROMPT_VOICE:-jorge}"     # Voz diferente para prompts del usuario
+RATE="${TTS_PROMPT_RATE:-200}"         # Velocidad más rápida para prompts
+ENABLED="${TTS_PROMPT_ENABLED:-false}" # Deshabilitado por defecto
+
+# Salir si está deshabilitado
+if [ "$ENABLED" != "true" ]; then
+    exit 0
+fi
+
+# Leer el prompt desde stdin
+PROMPT=$(cat)
+
+# Anuncio breve
+ANNOUNCEMENT="Procesando tu solicitud"
+
+# Reproducir usando TTS-macOS CLI (si está instalado)
+if command -v tts-macos &> /dev/null; then
+    tts-macos "$ANNOUNCEMENT" --voice "$VOICE" --rate "$RATE" 2>/dev/null &
+    exit 0
+fi
+
+# Fallback: usar say directamente
+VOICE_CAPITALIZED="$(echo "${VOICE:0:1}" | tr '[:lower:]' '[:upper:]')${VOICE:1}"
+say -v "$VOICE_CAPITALIZED" -r "$RATE" "$ANNOUNCEMENT" 2>/dev/null &
+
+exit 0

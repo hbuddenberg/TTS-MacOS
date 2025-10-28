@@ -1,0 +1,44 @@
+#!/bin/bash
+# Hook post-respuesta: Lee las respuestas de Claude en voz alta usando TTS-macOS
+# Este hook se ejecuta después de cada respuesta de Claude
+
+# Configuración
+VOICE="${TTS_VOICE:-monica}"           # Voz por defecto (monica, jorge, paulina, etc.)
+RATE="${TTS_RATE:-175}"                # Velocidad en palabras por minuto
+MAX_LENGTH="${TTS_MAX_LENGTH:-500}"    # Longitud máxima de texto a leer
+ENABLED="${TTS_ENABLED:-false}"        # Habilitar/deshabilitar el TTS
+
+# Salir si está deshabilitado
+if [ "$ENABLED" != "true" ]; then
+    exit 0
+fi
+
+# Leer la respuesta desde stdin
+RESPONSE=$(cat)
+
+# Extraer solo el texto (eliminar markdown y código)
+# Eliminar bloques de código
+TEXT=$(echo "$RESPONSE" | sed '/```/,/```/d')
+# Eliminar líneas con solo símbolos
+TEXT=$(echo "$TEXT" | sed '/^[#*`-]*$/d')
+# Eliminar caracteres markdown comunes
+TEXT=$(echo "$TEXT" | sed 's/[#*`]//g')
+# Truncar si es muy largo
+TEXT=$(echo "$TEXT" | head -c "$MAX_LENGTH")
+
+# Si el texto está vacío, salir
+if [ -z "$TEXT" ]; then
+    exit 0
+fi
+
+# Reproducir usando TTS-macOS CLI (si está instalado)
+if command -v tts-macos &> /dev/null; then
+    tts-macos "$TEXT" --voice "$VOICE" --rate "$RATE" 2>/dev/null &
+    exit 0
+fi
+
+# Fallback: usar say directamente
+VOICE_CAPITALIZED="$(echo "${VOICE:0:1}" | tr '[:lower:]' '[:upper:]')${VOICE:1}"
+say -v "$VOICE_CAPITALIZED" -r "$RATE" "$TEXT" 2>/dev/null &
+
+exit 0

@@ -32,22 +32,27 @@ mcp-tts-macos/           # Main project directory
 ### MCP Server Mode (server.py)
 
 - Uses `mcp.server` library to expose three tools:
-  - `speak_text` - Reproduces text with configurable voice and rate
-  - `list_voices` - Lists available Spanish voices
-  - `save_audio` - Saves text as AIFF audio file on Desktop
+  - `speak_text` - Reproduces text with configurable voice and rate, **ALL system voices supported**
+  - `list_voices` - Lists **ALL** available voices categorized (Español, Enhanced, Siri, etc.)
+  - `save_audio` - Saves text as AIFF audio file on Desktop with any voice
+- **Auto-detection**: Detects ALL system voices at startup (~84+ voices)
+- **Flexible search**: Supports exact, partial, case-insensitive voice matching
 - Runs asynchronously using `asyncio` and `stdio_server`
 - Executes macOS `say` command via subprocess
 - Configured in Claude Desktop via `claude_desktop_config.json`
 
 ### CLI Tool Mode (src/tts_macos/cli.py)
 
-- **Key Feature**: Auto-detects available Spanish voices from system using `say -v ?`
-- Provides fallback voices if detection fails (monica, paulina, jorge, juan, diego, angelica)
-- Uses `argparse` for command-line interface
+- **Key Feature**: Auto-detects **ALL** voices from system using `say -v ?` (~84+ voices)
+- **Categorizes voices**: Español, Siri, Enhanced, Premium, Others
+- **Flexible search**: Exact, partial, case-insensitive matching
+- Provides fallback voices if detection fails
+- Uses `argparse` for command-line interface (no `choices` restriction)
 - Supports:
-  - Text-to-speech reproduction with customizable voice and rate (100-300 WPM)
+  - Text-to-speech with ANY voice in the system
   - Audio file saving (AIFF format)
-  - Voice listing with system detection
+  - Voice listing with categorization (--list)
+  - Búsqueda flexible de voces
 
 ### Voice System
 
@@ -59,15 +64,28 @@ The CLI implements dynamic voice detection (`obtener_voces_sistema()` in cli.py:
 
 ## Available Voices
 
-Default Spanish voices (may vary by system):
-- `monica` - Español México (Mujer)
-- `paulina` - Español México (Mujer)
-- `jorge` - Español España (Hombre)
-- `juan` - Español España (Hombre)
-- `diego` - Español Argentina (Hombre)
-- `angelica` - Español México (Mujer)
+The system **auto-detects all voices** available in macOS (~84+ voices).
 
-Voice names are case-insensitive in CLI but must be capitalized for the `say` command.
+### Voice Categories
+
+**Español (16 voces):**
+- Eddy, Flo, Grandma, Grandpa, Reed, Rocko, Sandy, Shelley (España y México)
+
+**Enhanced/Premium (12 voces):**
+- Angélica (México), Francisca (Chile), Jorge (España), Paulina (México)
+- Mónica (España), Juan (México), Diego (Argentina), Carlos (Colombia)
+- Isabela (Argentina), Marisol (España), Soledad (Colombia), Jimena (Colombia)
+
+**Siri (cuando se instalen):**
+- Siri Female, Siri Male (auto-detectadas)
+
+### Voice Search
+
+Voice names support **flexible search**:
+- **Exact**: `Monica`, `Angélica`, `Jorge`
+- **Case-insensitive**: `angelica`, `MONICA`, `jorge`
+- **Partial**: `angel` → Angélica, `franc` → Francisca
+- **Fallback**: If not found → first Spanish voice → Monica
 
 ## Development Commands
 

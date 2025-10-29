@@ -3,7 +3,7 @@
 # Este hook se ejecuta después de cada respuesta de Claude
 
 # Configuración
-VOICE="${TTS_VOICE:-monica}"           # Voz por defecto (monica, jorge, paulina, etc.)
+VOICE="${TTS_VOICE:-monica}"           # Voz por defecto
 RATE="${TTS_RATE:-175}"                # Velocidad en palabras por minuto
 MAX_LENGTH="${TTS_MAX_LENGTH:-500}"    # Longitud máxima de texto a leer
 ENABLED="${TTS_ENABLED:-false}"        # Habilitar/deshabilitar el TTS
@@ -31,14 +31,46 @@ if [ -z "$TEXT" ]; then
     exit 0
 fi
 
+# Función para buscar voz en el sistema
+find_voice() {
+    local voice_query="$1"
+
+    # Búsqueda exacta primero (case-insensitive)
+    local exact_match=$(say -v ? | grep -i "^${voice_query} " | head -1 | awk '{print $1}')
+    if [ -n "$exact_match" ]; then
+        echo "$exact_match"
+        return 0
+    fi
+
+    # Búsqueda parcial (para voces como "Siri Female", "Siri Male")
+    local partial_match=$(say -v ? | grep -i "$voice_query" | head -1 | awk '{print $1}')
+    if [ -n "$partial_match" ]; then
+        echo "$partial_match"
+        return 0
+    fi
+
+    # Fallback: buscar cualquier voz en español
+    local spanish_voice=$(say -v ? | grep -iE "(spanish|español)" | head -1 | awk '{print $1}')
+    if [ -n "$spanish_voice" ]; then
+        echo "$spanish_voice"
+        return 0
+    fi
+
+    # Último fallback: Monica o primera voz disponible
+    echo "Monica"
+}
+
+# Buscar la voz en el sistema
+VOICE_NAME=$(find_voice "$VOICE")
+
 # Reproducir usando TTS-macOS CLI (si está instalado)
 if command -v tts-macos &> /dev/null; then
-    tts-macos "$TEXT" --voice "$VOICE" --rate "$RATE" 2>/dev/null &
+    # tts-macos maneja la capitalización internamente
+    tts-macos "$TEXT" --voice "$(echo "$VOICE_NAME" | tr '[:upper:]' '[:lower:]')" --rate "$RATE" 2>/dev/null &
     exit 0
 fi
 
 # Fallback: usar say directamente
-VOICE_CAPITALIZED="$(echo "${VOICE:0:1}" | tr '[:lower:]' '[:upper:]')${VOICE:1}"
-say -v "$VOICE_CAPITALIZED" -r "$RATE" "$TEXT" 2>/dev/null &
+say -v "$VOICE_NAME" -r "$RATE" "$TEXT" 2>/dev/null &
 
 exit 0

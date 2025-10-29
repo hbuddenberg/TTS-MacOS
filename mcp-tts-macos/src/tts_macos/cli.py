@@ -9,7 +9,7 @@ import sys
 import unicodedata
 from pathlib import Path
 
-__version__ = "1.2.1"
+__version__ = "1.3.0"
 
 def normalize_text(text):
     """Normaliza texto removiendo acentos para comparación

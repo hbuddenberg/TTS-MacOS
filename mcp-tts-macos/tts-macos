@@ -1,159 +1,30 @@
 #!/usr/bin/env python3
 """
-TTS macOS - Herramienta de línea de comandos para Text-to-Speech
-Uso: tts-macos "tu texto aquí" --voice monica --rate 175
+TTS macOS - Wrapper para el CLI con detección dinámica de voces
+Este script actúa como un punto de entrada que ejecuta el CLI real
+desde el paquete src/tts_macos/cli.py
 """
 
-import argparse
-import subprocess
 import sys
+import os
 from pathlib import Path
 
-# Voces disponibles
-VOCES = {
-    "monica": "Monica",
-    "paulina": "Paulina", 
-    "jorge": "Jorge",
-    "juan": "Juan",
-    "diego": "Diego",
-    "angelica": "Angelica"
-}
+# Agregar el directorio src al path para poder importar el CLI
+script_dir = Path(__file__).parent
+src_dir = script_dir / "src"
+sys.path.insert(0, str(src_dir))
 
-def hablar(texto, voz="monica", velocidad=175):
-    """Reproduce texto usando TTS de macOS"""
-    voz_capitalizada = VOCES.get(voz.lower(), "Monica")
-    
-    try:
-        subprocess.run(
-            ["say", "-v", voz_capitalizada, "-r", str(velocidad), texto],
-            check=True
-        )
-        return True
-    except subprocess.CalledProcessError as e:
-        print(f"❌ Error al reproducir: {e}", file=sys.stderr)
-        return False
-    except FileNotFoundError:
-        print("❌ Comando 'say' no encontrado. ¿Estás en macOS?", file=sys.stderr)
-        return False
+try:
+    # Importar y ejecutar el CLI real
+    from tts_macos.cli import main
 
-def guardar(texto, archivo, voz="monica"):
-    """Guarda texto como archivo de audio"""
-    voz_capitalizada = VOCES.get(voz.lower(), "Monica")
-    
-    # Asegurar extensión .aiff
-    if not archivo.endswith(".aiff"):
-        archivo += ".aiff"
-    
-    try:
-        subprocess.run(
-            ["say", "-v", voz_capitalizada, "-o", archivo, texto],
-            check=True
-        )
-        print(f"✅ Audio guardado en: {archivo}")
-        return True
-    except subprocess.CalledProcessError as e:
-        print(f"❌ Error al guardar: {e}", file=sys.stderr)
-        return False
+    if __name__ == "__main__":
+        sys.exit(main())
 
-def listar_voces():
-    """Lista las voces disponibles"""
-    print("\n🎤 Voces disponibles en español:\n")
-    voces_info = {
-        "monica": "Español México (Mujer)",
-        "paulina": "Español México (Mujer)",
-        "jorge": "Español España (Hombre)",
-        "juan": "Español España (Hombre)",
-        "diego": "Español Argentina (Hombre)",
-        "angelica": "Español México (Mujer)"
-    }
-    
-    for voz, descripcion in voces_info.items():
-        print(f"  • {voz:10} - {descripcion}")
-    
-    print("\n💡 Uso: tts-macos \"tu texto\" --voice jorge\n")
-
-def main():
-    parser = argparse.ArgumentParser(
-        description="🎙️  TTS macOS - Convierte texto a voz usando el TTS nativo de macOS",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Ejemplos de uso:
-  tts-macos "Hola mundo"
-  tts-macos "Buenos días" --voice jorge
-  tts-macos "Texto rápido" --rate 250
-  tts-macos "Mensaje" --save mi_audio.aiff
-  tts-macos --list
-  tts-macos "Hola" --voice paulina --rate 200 --save saludo.aiff
-
-Voces disponibles: monica, paulina, jorge, juan, diego, angelica
-        """
-    )
-    
-    parser.add_argument(
-        "texto",
-        nargs="?",
-        help="Texto a convertir en voz"
-    )
-    
-    parser.add_argument(
-        "-v", "--voice",
-        default="monica",
-        choices=list(VOCES.keys()),
-        help="Voz a utilizar (default: monica)"
-    )
-    
-    parser.add_argument(
-        "-r", "--rate",
-        type=int,
-        default=175,
-        help="Velocidad en palabras por minuto (100-300, default: 175)"
-    )
-    
-    parser.add_argument(
-        "-s", "--save",
-        metavar="ARCHIVO",
-        help="Guardar audio en archivo (formato .aiff)"
-    )
-    
-    parser.add_argument(
-        "-l", "--list",
-        action="store_true",
-        help="Listar voces disponibles"
-    )
-    
-    parser.add_argument(
-        "--version",
-        action="version",
-        version="tts-macos 1.0.0"
-    )
-    
-    args = parser.parse_args()
-    
-    # Listar voces
-    if args.list:
-        listar_voces()
-        return 0
-    
-    # Validar que hay texto
-    if not args.texto:
-        parser.print_help()
-        return 1
-    
-    # Validar velocidad
-    if not 100 <= args.rate <= 300:
-        print("⚠️  Velocidad debe estar entre 100 y 300 palabras por minuto", file=sys.stderr)
-        return 1
-    
-    # Guardar archivo
-    if args.save:
-        success = guardar(args.texto, args.save, args.voice)
-        if not success:
-            return 1
-    
-    # Reproducir audio
-    success = hablar(args.texto, args.voice, args.rate)
-    
-    return 0 if success else 1
-
-if __name__ == "__main__":
-    sys.exit(main())
+except ImportError as e:
+    print(f"❌ Error al importar el CLI: {e}", file=sys.stderr)
+    print("📍 Asegúrate de que el directorio src/ está presente y contiene el módulo tts_macos", file=sys.stderr)
+    sys.exit(1)
+except Exception as e:
+    print(f"❌ Error ejecutando tts-macos: {e}", file=sys.stderr)
+    sys.exit(1)

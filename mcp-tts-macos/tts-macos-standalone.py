@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 TTS macOS - Herramienta de línea de comandos para Text-to-Speech
 """
@@ -6,8 +7,9 @@ TTS macOS - Herramienta de línea de comandos para Text-to-Speech
 import argparse
 import subprocess
 import sys
-import unicodedata
 from pathlib import Path
+
+__version__ = "1.2.1"
 
 __version__ = "1.3.3"
 
@@ -340,7 +342,7 @@ def listar_voces(filtro_genero=None, filtro_idioma=None):
             filtros_activos.append(f"Género: {filtro_genero_norm}")
         if filtro_idioma_norm:
             filtros_activos.append(f"Idioma: {filtro_idioma_norm}")
-        print("═══════════════════════════════════════════════════════════")
+        print(f"═══════════════════════════════════════════════════════════")
         print(f"🔍 FILTROS ACTIVOS: {', '.join(filtros_activos)}")
     print("═══════════════════════════════════════════════════════════")
     print("")
@@ -404,216 +406,6 @@ def listar_voces(filtro_genero=None, filtro_idioma=None):
     print('  tts-macos "Hola mundo" --voice Monica')
     print('  tts-macos "Hola mundo" --voice Siri')
     print('  tts-macos "Hola mundo" --voice Angélica')
-    print("")
-
-
-def listar_voces_compact(filtro_genero=None, filtro_idioma=None):
-    """Lista voces en formato compacto: voz, idioma, localizaciones, género"""
-    categorias = categorizar_voces()
-
-    if not categorias:
-        print("❌ No se pudo obtener la lista de voces del sistema")
-        return
-
-    # Normalizar filtros
-    filtro_genero_norm = None
-    if filtro_genero:
-        filtro_genero_norm = filtro_genero.lower()
-        if filtro_genero_norm in ["hombre", "male"]:
-            filtro_genero_norm = "male"
-        elif filtro_genero_norm in ["mujer", "female"]:
-            filtro_genero_norm = "female"
-
-    filtro_idioma_norm = filtro_idioma.lower() if filtro_idioma else None
-
-    # Función para verificar si una voz cumple los filtros
-    def cumple_filtros(nombre, info):
-        if filtro_genero_norm:
-            info_lower = info.lower()
-            nombre_lower = nombre.lower()
-
-            if filtro_genero_norm == "male":
-                indicadores_masculinos = ["male", "hombre", "masculino", "man", "boy"]
-                nombres_masculinos = [
-                    "jorge",
-                    "juan",
-                    "diego",
-                    "carlos",
-                    "alberto",
-                    "rey",
-                    "rocko",
-                    "reed",
-                    "grandpa",
-                ]
-                if not any(p in info_lower for p in indicadores_masculinos) and not any(
-                    n in nombre_lower for n in nombres_masculinos
-                ):
-                    return False
-            elif filtro_genero_norm == "female":
-                indicadores_femeninos = [
-                    "female",
-                    "mujer",
-                    "femenino",
-                    "woman",
-                    "girl",
-                    "lady",
-                ]
-                nombres_femeninos = [
-                    "monica",
-                    "paulina",
-                    "angelica",
-                    "maria",
-                    "sandy",
-                    "flo",
-                    "shelley",
-                    "grandma",
-                    "marisol",
-                    "isabela",
-                    "soledad",
-                    "francisca",
-                    "mónica",
-                ]
-                if not any(p in info_lower for p in indicadores_femeninos) and not any(
-                    n in nombre_lower for n in nombres_femeninos
-                ):
-                    return False
-
-        if filtro_idioma_norm:
-            info_lower = info.lower()
-            idioma_keywords = {
-                "es_es": ["es_es", "spain", "españa", "spanish"],
-                "es_mx": ["es_mx", "mexico", "méxico"],
-                "es_ar": ["es_ar", "argentina"],
-                "es_cl": ["es_cl", "chile"],
-                "es_co": ["es_co", "colombia"],
-                "en_us": ["en_us", "united", "english"],
-            }
-
-            if filtro_idioma_norm in idioma_keywords:
-                keywords = idioma_keywords[filtro_idioma_norm]
-                if not any(keyword in info_lower for keyword in keywords):
-                    return False
-            else:
-                if filtro_idioma_norm not in info_lower:
-                    return False
-
-        return True
-
-    # Recolectar todas las voces únicas con sus localizaciones
-    voces_unicas = {}
-
-    # Unificar todas las categorías
-    todas_categorias = []
-    for cat in ["espanol", "enhanced", "premium", "siri"]:
-        todas_categorias.extend(categorias[cat])
-
-    # Agrupar por nombre de voz
-    for nombre, info in todas_categorias:
-        if cumple_filtros(nombre, info):
-            if nombre not in voces_unicas:
-                voces_unicas[nombre] = {
-                    "info": info,
-                    "localizaciones": set(),
-                    "idiomas": set(),
-                }
-
-            # Extraer localización
-            info_lower = info.lower()
-            if "es_es" in info_lower or "spain" in info_lower or "españa" in info_lower:
-                voces_unicas[nombre]["localizaciones"].add("es_ES")
-                voces_unicas[nombre]["idiomas"].add("Español")
-            elif (
-                "es_mx" in info_lower
-                or "mexico" in info_lower
-                or "méxico" in info_lower
-            ):
-                voces_unicas[nombre]["localizaciones"].add("es_MX")
-                voces_unicas[nombre]["idiomas"].add("Español")
-            elif "es_ar" in info_lower or "argentina" in info_lower:
-                voces_unicas[nombre]["localizaciones"].add("es_AR")
-                voces_unicas[nombre]["idiomas"].add("Español")
-            elif "es_cl" in info_lower or "chile" in info_lower:
-                voces_unicas[nombre]["localizaciones"].add("es_CL")
-                voces_unicas[nombre]["idiomas"].add("Español")
-            elif "es_co" in info_lower or "colombia" in info_lower:
-                voces_unicas[nombre]["localizaciones"].add("es_CO")
-                voces_unicas[nombre]["idiomas"].add("Español")
-            elif (
-                "en_us" in info_lower
-                or "united" in info_lower
-                or "english" in info_lower
-            ):
-                voces_unicas[nombre]["localizaciones"].add("en_US")
-                voces_unicas[nombre]["idiomas"].add("English")
-
-    # Determinar género
-    def detectar_genero(nombre):
-        nombre_lower = nombre.lower()
-        if any(
-            n in nombre_lower
-            for n in [
-                "monica",
-                "paulina",
-                "angelica",
-                "maria",
-                "sandy",
-                "flo",
-                "shelley",
-                "grandma",
-                "marisol",
-                "isabela",
-                "soledad",
-                "francisca",
-                "mónica",
-                "jimena",
-                "angélica",
-                "angélica",
-            ]
-        ):
-            return "mujer"
-        elif any(
-            n in nombre_lower
-            for n in [
-                "jorge",
-                "juan",
-                "diego",
-                "carlos",
-                "alberto",
-                "rey",
-                "rocko",
-                "reed",
-                "grandpa",
-            ]
-        ):
-            return "hombre"
-        else:
-            return "desconocido"
-
-    # Mostrar resultados
-    print("\n📋 LISTA COMPACTA DE VOCES")
-    print("══════════════════════════════════════════════════════════")
-    print(f"{'Voz':<15} {'Idioma':<10} {'Localizaciones':<20} {'Género':<10}")
-    print("──────────────────────────────────────────────────────────────")
-
-    for nombre in sorted(voces_unicas.keys()):
-        datos = voces_unicas[nombre]
-        idioma = ", ".join(datos["idiomas"]) if datos["idiomas"] else "Otros"
-        localizaciones = (
-            ", ".join(sorted(datos["localizaciones"]))
-            if datos["localizaciones"]
-            else "N/A"
-        )
-        genero = detectar_genero(nombre)
-
-        print(f"{nombre:<15} {idioma:<10} {localizaciones:<20} {genero:<10}")
-
-    print("══════════════════════════════════════════════════════════")
-    print(f"Total de voces únicas: {len(voces_unicas)}")
-    print("")
-    print("💡 Uso:")
-    print('  tts-macos "Hola mundo" --voice Monica')
-    print("  tts-macos --list --compact --gen female     # Filtro combinado")
-    print("  tts-macos --list --compact --lang es_ES     # Solo españolas")
     print("")
 
 
@@ -691,16 +483,12 @@ EJEMPLOS DE USO
   uvx --from . tts-macos --list
   uvx --from . tts-macos --list --gen female
   uvx --from . tts-macos --list --lang es_ES
-  uvx --from . tts-macos --list --compact
-  uvx --from . tts-macos --list --compact --gen female
 
   # Crear alias para uso frecuente:
   alias tts='uvx --from ~/ruta/al/proyecto tts-macos'
   tts "Ahora es más fácil"
   tts --list --gen male
   tts --list --lang es_MX
-  tts --list --compact
-  tts --list --compact --gen female --lang es_ES
 
 🎭 Voces Enhanced/Premium:
   tts-macos "Calidad superior" --voice "Angélica (Enhanced)"
@@ -718,7 +506,6 @@ Puedes usar nombres parciales o sin acentos:
 Total de voces detectadas: {len(VOCES)}
 Usa --list para ver todas las voces disponibles organizadas por categoría
 Usa --list --gen female --lang es_ES para filtrar por género e idioma
-Usa --list --compact para vista resumida: voz, idioma, localizaciones, género
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 🤖 CONFIGURACIÓN DEL SERVIDOR MCP (para Claude Desktop)
@@ -777,12 +564,6 @@ Archivo: ~/Library/Application Support/Claude/claude_desktop_config.json
     )
 
     parser.add_argument(
-        "--compact",
-        action="store_true",
-        help="Mostrar lista compacta: voz, idioma, localizaciones, género",
-    )
-
-    parser.add_argument(
         "--gen",
         "--gender",
         choices=["male", "female", "hombre", "mujer"],
@@ -803,10 +584,7 @@ Archivo: ~/Library/Application Support/Claude/claude_desktop_config.json
 
     # Listar voces (con filtros si se especificaron)
     if args.list:
-        if args.compact:
-            listar_voces_compact(filtro_genero=args.gen, filtro_idioma=args.lang)
-        else:
-            listar_voces(filtro_genero=args.gen, filtro_idioma=args.lang)
+        listar_voces(filtro_genero=args.gen, filtro_idioma=args.lang)
         return 0
 
     # Validar que hay texto

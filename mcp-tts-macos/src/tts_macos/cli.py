@@ -9,7 +9,7 @@ import sys
 import unicodedata
 from pathlib import Path
 
-__version__ = "1.4.0"
+__version__ = "1.4.1"
 
 
 def normalize_text(text):
@@ -589,11 +589,28 @@ def listar_voces_compact(filtro_genero=None, filtro_idioma=None):
         else:
             return "desconocido"
 
+    # Recolectar información de tipos para cada voz
+    def obtener_tipos_voz(nombre):
+        tipos = []
+
+        if nombre in [v[0] for v in categorias["espanol"]]:
+            tipos.append("Normal")
+        if nombre in [v[0] for v in categorias["enhanced"]]:
+            tipos.append("Enhanced")
+        if nombre in [v[0] for v in categorias["premium"]]:
+            tipos.append("Premium")
+        if nombre in [v[0] for v in categorias["siri"]]:
+            tipos.append("Siri")
+
+        return ", ".join(tipos) if tipos else "Normal"
+
     # Mostrar resultados
     print("\n📋 LISTA COMPACTA DE VOCES")
-    print("══════════════════════════════════════════════════════════")
-    print(f"{'Voz':<15} {'Idioma':<10} {'Localizaciones':<20} {'Género':<10}")
-    print("──────────────────────────────────────────────────────────────")
+    print("═══════════════════════════════════════════════════════════════════")
+    print(
+        f"{'Voz':<15} {'Tipo':<20} {'Idioma':<10} {'Localizaciones':<20} {'Género':<10}"
+    )
+    print("──────────────────────────────────────────────────────────────────────────")
 
     for nombre in sorted(voces_unicas.keys()):
         datos = voces_unicas[nombre]
@@ -604,8 +621,8 @@ def listar_voces_compact(filtro_genero=None, filtro_idioma=None):
             else "N/A"
         )
         genero = detectar_genero(nombre)
-
-        print(f"{nombre:<15} {idioma:<10} {localizaciones:<20} {genero:<10}")
+        tipo = obtener_tipos_voz(nombre)
+        print(f"{nombre:<15} {tipo:<20} {idioma:<10} {localizaciones:<20} {genero:<10}")
 
     print("══════════════════════════════════════════════════════════")
     print(f"Total de voces únicas: {len(voces_unicas)}")
@@ -718,7 +735,7 @@ Puedes usar nombres parciales o sin acentos:
 Total de voces detectadas: {len(VOCES)}
 Usa --list para ver todas las voces disponibles organizadas por categoría
 Usa --list --gen female --lang es_ES para filtrar por género e idioma
-Usa --list --compact para vista resumida: voz, idioma, localizaciones, género
+Usa --list --compact para vista resumida: voz, tipo, idioma, localizaciones, género
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 🤖 CONFIGURACIÓN DEL SERVIDOR MCP (para Claude Desktop)

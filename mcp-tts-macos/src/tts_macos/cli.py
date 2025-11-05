@@ -9,7 +9,7 @@ import sys
 import unicodedata
 from pathlib import Path
 
-__version__ = "1.4.3"
+__version__ = "1.4.4"
 
 
 def normalize_text(text):

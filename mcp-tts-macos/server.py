@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
 Servidor MCP para Text-to-Speech usando el TTS nativo de macOS
+Versión 1.4.4 - Soporte completo para selección de variantes de voz
 """
 
 import asyncio

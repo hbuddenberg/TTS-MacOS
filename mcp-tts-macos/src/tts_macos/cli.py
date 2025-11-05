@@ -445,7 +445,7 @@ def listar_voces(filtro_genero=None, filtro_idioma=None):
     print("")
 
 
-def listar_voces_compact(filtro_genero=None, filtro_idioma=None):
+def listar_voces_compact(filtro_genero=None, filtro_idioma=None, filtro_tipo=None):
     """Lista voces en formato compacto: voz, idioma, localizaciones, género"""
     categorias = categorizar_voces()
 

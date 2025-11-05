@@ -9,7 +9,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-__version__ = "1.4.1"
+__version__ = "1.4.3"
 
 
 def normalize_text(text):

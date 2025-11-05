@@ -9,7 +9,7 @@ import sys
 import unicodedata
 from pathlib import Path
 
-__version__ = "1.4.1"
+__version__ = "1.4.3"
 
 
 def normalize_text(text):
@@ -173,7 +173,7 @@ def buscar_voz_en_sistema(query):
 VOCES = obtener_voces_sistema()
 
 
-def hablar(texto, voz="monica", velocidad=175):
+def hablar(texto, voz="monica", velocidad=175, tipo=None):
     """Reproduce texto usando TTS de macOS con búsqueda flexible de voces"""
     # Primero intentar con las voces conocidas
     voz_encontrada = VOCES.get(voz.lower())
@@ -181,6 +181,25 @@ def hablar(texto, voz="monica", velocidad=175):
     # Si no está en VOCES, buscar en el sistema
     if not voz_encontrada:
         voz_encontrada = buscar_voz_en_sistema(voz)
+
+    # Si se especificó tipo, intentar encontrar variante específica
+    if tipo and voz_encontrada:
+        categorias = categorizar_voces()
+        for cat, voces_lista in categorias.items():
+            for nombre_voz, _ in voces_lista:
+                if nombre_voz.lower() == voz_encontrada.lower():
+                    if tipo.lower() == "normal" and cat == "espanol":
+                        voz_encontrada = nombre_voz
+                        break
+                    elif tipo.lower() == "enhanced" and cat == "enhanced":
+                        voz_encontrada = nombre_voz
+                        break
+                    elif tipo.lower() == "premium" and cat == "premium":
+                        voz_encontrada = nombre_voz
+                        break
+                    elif tipo.lower() == "siri" and cat == "siri":
+                        voz_encontrada = nombre_voz
+                        break
 
     # Fallback final
     if not voz_encontrada:
@@ -199,7 +218,7 @@ def hablar(texto, voz="monica", velocidad=175):
         return False
 
 
-def guardar(texto, archivo, voz="monica"):
+def guardar(texto, archivo, voz="monica", tipo=None):
     """Guarda texto como archivo de audio con búsqueda flexible de voces"""
     # Primero intentar con las voces conocidas
     voz_encontrada = VOCES.get(voz.lower())
@@ -207,6 +226,25 @@ def guardar(texto, archivo, voz="monica"):
     # Si no está en VOCES, buscar en el sistema
     if not voz_encontrada:
         voz_encontrada = buscar_voz_en_sistema(voz)
+
+    # Si se especificó tipo, intentar encontrar variante específica
+    if tipo and voz_encontrada:
+        categorias = categorizar_voces()
+        for cat, voces_lista in categorias.items():
+            for nombre_voz, _ in voces_lista:
+                if nombre_voz.lower() == voz_encontrada.lower():
+                    if tipo.lower() == "normal" and cat == "espanol":
+                        voz_encontrada = nombre_voz
+                        break
+                    elif tipo.lower() == "enhanced" and cat == "enhanced":
+                        voz_encontrada = nombre_voz
+                        break
+                    elif tipo.lower() == "premium" and cat == "premium":
+                        voz_encontrada = nombre_voz
+                        break
+                    elif tipo.lower() == "siri" and cat == "siri":
+                        voz_encontrada = nombre_voz
+                        break
 
     # Fallback final
     if not voz_encontrada:
@@ -723,6 +761,10 @@ EJEMPLOS DE USO
   tts-macos "Calidad superior" --voice "Angélica (Enhanced)"
   tts-macos "Voz premium" --voice "Marisol (Premium)"
 
+  # Forzar variante específica con --type:
+  tts-macos "Hola" --voice Marisol --type premium
+  tts-macos "Hola" --voice Marisol --type enhanced
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 BÚSQUEDA FLEXIBLE DE VOCES
 
@@ -796,7 +838,13 @@ Archivo: ~/Library/Application Support/Claude/claude_desktop_config.json
     parser.add_argument(
         "--compact",
         action="store_true",
-        help="Mostrar lista compacta: voz, idioma, localizaciones, género",
+        help="Mostrar lista compacta: voz, tipo, idioma, localizaciones, género",
+    )
+
+    parser.add_argument(
+        "--type",
+        choices=["normal", "enhanced", "premium", "siri"],
+        help="Filtrar voces por tipo o forzar variante (normal/enhanced/premium/siri)",
     )
 
     parser.add_argument(
@@ -821,9 +869,13 @@ Archivo: ~/Library/Application Support/Claude/claude_desktop_config.json
     # Listar voces (con filtros si se especificaron)
     if args.list:
         if args.compact:
-            listar_voces_compact(filtro_genero=args.gen, filtro_idioma=args.lang)
+            listar_voces_compact(
+                filtro_genero=args.gen, filtro_idioma=args.lang, filtro_tipo=args.type
+            )
         else:
-            listar_voces(filtro_genero=args.gen, filtro_idioma=args.lang)
+            listar_voces(
+                filtro_genero=args.gen, filtro_idioma=args.lang, filtro_tipo=args.type
+            )
         return 0
 
     # Validar que hay texto
@@ -841,12 +893,12 @@ Archivo: ~/Library/Application Support/Claude/claude_desktop_config.json
 
     # Guardar archivo
     if args.save:
-        success = guardar(args.texto, args.save, args.voice)
+        success = guardar(args.texto, args.save, args.voice, args.type)
         if not success:
             return 1
 
     # Reproducir audio
-    success = hablar(args.texto, args.voice, args.rate)
+    success = hablar(args.texto, args.voice, args.rate, args.type)
 
     return 0 if success else 1
 

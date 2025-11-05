@@ -224,7 +224,7 @@ async def list_tools() -> list[Tool]:
                     },
                     "type": {
                         "type": "string",
-                        "description": "Forzar variante específica de voz (normal/enhanced/premium/siri). Útil para voces con múltiples variantes como Marisol (Enhanced + Premium)",
+                        "description": "Forzar variante específica de voz (normal/enhanced/premium/siri). Útil para voces con múltiples variantes como Marisol (Enhanced + Premium).",
                         "enum": ["normal", "enhanced", "premium", "siri"],
                     },
                 },
@@ -233,21 +233,6 @@ async def list_tools() -> list[Tool]:
         ),
     ]
 
-
-@app.call_tool()
-async def call_tool(name: str, arguments: dict) -> list[TextContent]:
-    """
-    Ejecuta la herramienta solicitada
-    """
-    try:
-        if name == "speak_text":
-            return await speak_text(arguments)
-        elif name == "list_voices":
-            return await list_voices()
-        elif name == "save_audio":
-            return await save_audio(arguments)
-        else:
-            return [TextContent(type="text", text=f"Herramienta desconocida: {name}")]
     except Exception as e:
         return [TextContent(type="text", text=f"Error al ejecutar {name}: {str(e)}")]
 

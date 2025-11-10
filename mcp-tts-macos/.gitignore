@@ -33,3 +33,39 @@ claude_desktop_config.json
 *.aiff
 *.wav
 *.mp3
+
+# Build artifacts
+*.egg-info/
+dist/
+build/
+
+# Cache and temporary directories
+.cache/
+*.cache
+.pytest_cache/
+.mypy_cache/
+.tox/
+
+# UV cache
+.uv_cache/
+
+# Backup files
+*.bak
+*.backup
+*~
+.DS_Store?
+
+# Temporary files
+*.tmp
+*.temp
+*.pid
+
+# Local configurations
+.env
+.env.local
+.env.*.local
+
+# Test outputs
+test_*.aiff
+test_*.wav
+output_*

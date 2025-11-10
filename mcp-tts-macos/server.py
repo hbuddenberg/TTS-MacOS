@@ -5,16 +5,21 @@ Versión 1.4.4 - Soporte completo para selección de variantes de voz
 """
 
 import asyncio
-import subprocess
 import json
+import logging
+import subprocess
 import unicodedata
 from typing import Any, Dict, List, Tuple
-from mcp.server import Server
-from mcp.server.stdio import stdio_server
-from mcp.types import Tool, TextContent
 
-# Crear instancia del servidor
-app = Server("mcp-tts-macos")
+from mcp.server.fastmcp import FastMCP
+from mcp.types import TextContent
+
+# Configurar logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Crear instancia del servidor FastMCP
+mcp = FastMCP("mcp-tts-macos")
 
 
 def normalize_text(text: str) -> str:
@@ -164,109 +169,47 @@ def find_voice_in_system(query: str) -> str:
 SYSTEM_VOICES = get_system_voices()
 
 
-@app.list_tools()
-async def list_tools() -> list[Tool]:
+@mcp.tool()
+async def speak_text(
+    text: str, voice: str = "monica", rate: int = 175, type: str = None
+) -> str:
     """
-    Lista las herramientas disponibles en el servidor MCP
-    """
-    return [
-        Tool(
-            name="speak_text",
-            description="Convierte texto a voz y lo reproduce usando el TTS nativo de macOS. Soporta TODAS las voces del sistema incluyendo español, Siri, Enhanced y Premium. Puede forzar variante específica con el parámetro 'type'.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "text": {
-                        "type": "string",
-                        "description": "El texto que deseas convertir a audio",
-                    },
-                    "voice": {
-                        "type": "string",
-                        "description": "Nombre de la voz a utilizar (ej: Monica, Jorge, Siri, Angélica). Acepta cualquier voz instalada en el sistema. Usa list_voices para ver opciones.",
-                        "default": "monica",
-                    },
-                    "rate": {
-                        "type": "integer",
-                        "description": "Velocidad de lectura en palabras por minuto (100-300). Default: 175",
-                        "default": 175,
-                        "minimum": 100,
-                        "maximum": 300,
-                    },
-                    "type": {
-                        "type": "string",
-                        "description": "Forzar variante específica de voz (normal/enhanced/premium/siri). Útil para voces con múltiples variantes como Marisol (Enhanced + Premium).",
-                        "enum": ["normal", "enhanced", "premium", "siri"],
-                    },
-                },
-                "required": ["text"],
-            },
-        ),
-        Tool(
-            name="list_voices",
-            description="Lista TODAS las voces disponibles en el sistema macOS categorizadas por tipo: Español, Siri, Enhanced/Premium y otras",
-            inputSchema={"type": "object", "properties": {}},
-        ),
-        Tool(
-            name="save_audio",
-            description="Convierte texto a voz y lo guarda como archivo de audio (AIFF). Soporta todas las voces del sistema. Puede forzar variante específica con el parámetro 'type'.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "text": {"type": "string", "description": "El texto a convertir"},
-                    "filename": {
-                        "type": "string",
-                        "description": "Nombre del archivo (sin extensión)",
-                    },
-                    "voice": {
-                        "type": "string",
-                        "description": "Nombre de la voz a utilizar (ej: Monica, Jorge, Siri, Angélica)",
-                        "default": "monica",
-                    },
-                    "type": {
-                        "type": "string",
-                        "description": "Forzar variante específica de voz (normal/enhanced/premium/siri). Útil para voces con múltiples variantes como Marisol (Enhanced + Premium).",
-                        "enum": ["normal", "enhanced", "premium", "siri"],
-                    },
-                },
-                "required": ["text", "filename"],
-            },
-        ),
-    ]
+    Convierte texto a voz y lo reproduce usando el TTS nativo de macOS.
+    Soporta TODAS las voces del sistema incluyendo español, Siri, Enhanced y Premium.
+    Puede forzar variante específica con el parámetro 'type'.
 
-    except Exception as e:
-        return [TextContent(type="text", text=f"Error al ejecutar {name}: {str(e)}")]
-
-
-async def speak_text(arguments: dict) -> list[TextContent]:
+    Args:
+        text: El texto que deseas convertir a audio
+        voice: Nombre de la voz a utilizar (ej: Monica, Jorge, Siri, Angélica). Acepta cualquier voz instalada en el sistema.
+        rate: Velocidad de lectura en palabras por minuto (100-300)
+        type: Forzar variante específica de voz (normal/enhanced/premium/siri). Útil para voces con múltiples variantes como Marisol.
     """
-    Reproduce el texto usando TTS de macOS con búsqueda flexible de voces
-    """
-    text = arguments["text"]
-    voice_query = arguments.get("voice", "monica")
-    rate = arguments.get("rate", 175)
-    voice_type = arguments.get("type")
+    logger.info(
+        f"🎤 speak_text llamado con: text='{text[:50]}...', voice='{voice}', rate={rate}, type={type}"
+    )
 
     # Buscar la voz en el sistema
-    voice_name = find_voice_in_system(voice_query)
+    voice_name = find_voice_in_system(voice)
 
     # Si se especificó tipo, buscar variante específica
-    if voice_type and voice_name:
+    if type and voice_name:
         categorias = categorize_voices()
-        for cat, voices_list in categorias.items():
-            for voice_real_name, _ in voices_list:
-                if voice_real_name.lower() == voice_name.lower():
-                    if voice_type.lower() == "normal" and cat == "espanol":
-                        voice_name = voice_real_name
-                        break
-                    elif voice_type.lower() == "enhanced" and cat == "enhanced":
-                        voice_name = voice_real_name
-                        break
-                    elif voice_type.lower() == "premium" and cat == "premium":
-                        voice_name = voice_real_name
-                        break
-                    elif voice_type.lower() == "siri" and cat == "siri":
-                        voice_name = voice_real_name
-                        break
+        if categorias:
+            for cat, voices_list in categorias.items():
+                for voice_real_name, _ in voices_list:
+                    if voice_real_name.lower() == voice_name.lower():
+                        if type.lower() == "normal" and cat == "espanol":
+                            voice_name = voice_real_name
+                            break
+                        elif type.lower() == "enhanced" and cat == "enhanced":
+                            voice_name = voice_real_name
+                            break
+                        elif type.lower() == "premium" and cat == "premium":
+                            voice_name = voice_real_name
+                            break
+                        elif type.lower() == "siri" and cat == "siri":
+                            voice_name = voice_real_name
+                            break
 
     # Construir comando
     cmd = ["say", "-v", voice_name, "-r", str(rate), text]
@@ -279,31 +222,44 @@ async def speak_text(arguments: dict) -> list[TextContent]:
     stdout, stderr = await process.communicate()
 
     if process.returncode == 0:
-        return [
-            TextContent(
-                type="text",
-                text=f"✅ Audio reproducido exitosamente\nVoz: {voice_name}\nVelocidad: {rate} palabras/min",
-            )
-        ]
+        return f"✅ Audio reproducido exitosamente\nVoz: {voice_name}\nVelocidad: {rate} palabras/min"
     else:
         error_msg = stderr.decode() if stderr else "Error desconocido"
-        return [
-            TextContent(type="text", text=f"❌ Error al reproducir audio: {error_msg}")
-        ]
+        return f"❌ Error al reproducir audio: {error_msg}"
 
 
-async def list_voices() -> list[TextContent]:
+@mcp.tool()
+async def speak(
+    text: str, voice: str = "monica", rate: int = 175, type: str = None
+) -> str:
     """
-    Lista todas las voces disponibles categorizadas por tipo
+    Alias de speak_text para compatibilidad. Convierte texto a voz y lo reproduce usando el TTS nativo de macOS.
+    Soporta TODAS las voces del sistema incluyendo español, Siri, Enhanced y Premium.
+    Puede forzar variante específica con el parámetro 'type'.
+
+    Args:
+        text: El texto que deseas convertir a audio
+        voice: Nombre de la voz a utilizar (ej: Monica, Jorge, Siri, Angélica). Acepta cualquier voz instalada en el sistema.
+        rate: Velocidad de lectura en palabras por minuto (100-300)
+        type: Forzar variante específica de voz (normal/enhanced/premium/siri). Útil para voces con múltiples variantes como Marisol.
+    """
+    logger.info(
+        f"🎤 speak (alias) llamado con: text='{text[:50]}...', voice='{voice}', rate={rate}, type={type}"
+    )
+
+    # Reutilizar la lógica de speak_text
+    return await speak_text(text=text, voice=voice, rate=rate, type=type)
+
+
+@mcp.tool()
+async def list_voices() -> str:
+    """
+    Lista todas las voces disponibles en el sistema macOS categorizadas por tipo: Español, Siri, Enhanced/Premium y otras
     """
     categorias = categorize_voices()
 
     if not categorias:
-        return [
-            TextContent(
-                type="text", text="❌ No se pudo obtener la lista de voces del sistema"
-            )
-        ]
+        return "❌ No se pudo obtener la lista de voces del sistema"
 
     voices_info = "🎙️ **VOCES DISPONIBLES EN EL SISTEMA**\n\n"
 
@@ -312,9 +268,7 @@ async def list_voices() -> list[TextContent]:
         voices_info += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         voices_info += f"📍 **VOCES EN ESPAÑOL** ({len(categorias['espanol'])})\n"
         voices_info += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        for nombre, info in sorted(categorias["espanol"])[
-            :10
-        ]:  # Limitar a 10 para no saturar
+        for nombre, info in sorted(categorias["espanol"])[:10]:
             voices_info += f"• **{nombre}**: {info[len(nombre) :].strip()}\n"
         if len(categorias["espanol"]) > 10:
             voices_info += f"\n_... y {len(categorias['espanol']) - 10} más_\n"
@@ -355,39 +309,45 @@ async def list_voices() -> list[TextContent]:
     voices_info += "💡 **Uso:** Puedes usar cualquier nombre de voz (ej: Monica, Jorge, Siri, Angélica)\n"
     voices_info += "🔍 **Búsqueda flexible:** También funciona con búsqueda parcial (ej: 'siri' encuentra voces Siri)\n"
 
-    return [TextContent(type="text", text=voices_info)]
+    return voices_info
 
 
-async def save_audio(arguments: dict) -> list[TextContent]:
+@mcp.tool()
+async def save_audio(
+    text: str, filename: str, voice: str = "monica", type: str = None
+) -> str:
     """
-    Guarda el texto como archivo de audio con búsqueda flexible de voces
-    """
-    text = arguments["text"]
-    filename = arguments["filename"]
-    voice_query = arguments.get("voice", "monica")
-    voice_type = arguments.get("type")
+    Convierte texto a voz y lo guarda como archivo de audio (AIFF).
+    Soporta todas las voces del sistema. Puede forzar variante específica con el parámetro 'type'.
 
+    Args:
+        text: El texto a convertir
+        filename: Nombre del archivo (sin extensión)
+        voice: Nombre de la voz a utilizar (ej: Monica, Jorge, Siri, Angélica)
+        type: Forzar variante específica de voz (normal/enhanced/premium/siri). Útil para voces con múltiples variantes como Marisol.
+    """
     # Buscar la voz en el sistema
-    voice_name = find_voice_in_system(voice_query)
+    voice_name = find_voice_in_system(voice)
 
     # Si se especificó tipo, buscar variante específica
-    if voice_type and voice_name:
+    if type and voice_name:
         categorias = categorize_voices()
-        for cat, voices_list in categorias.items():
-            for voice_real_name, _ in voices_list:
-                if voice_real_name.lower() == voice_name.lower():
-                    if voice_type.lower() == "normal" and cat == "espanol":
-                        voice_name = voice_real_name
-                        break
-                    elif voice_type.lower() == "enhanced" and cat == "enhanced":
-                        voice_name = voice_real_name
-                        break
-                    elif voice_type.lower() == "premium" and cat == "premium":
-                        voice_name = voice_real_name
-                        break
-                    elif voice_type.lower() == "siri" and cat == "siri":
-                        voice_name = voice_real_name
-                        break
+        if categorias:
+            for cat, voices_list in categorias.items():
+                for voice_real_name, _ in voices_list:
+                    if voice_real_name.lower() == voice_name.lower():
+                        if type.lower() == "normal" and cat == "espanol":
+                            voice_name = voice_real_name
+                            break
+                        elif type.lower() == "enhanced" and cat == "enhanced":
+                            voice_name = voice_real_name
+                            break
+                        elif type.lower() == "premium" and cat == "premium":
+                            voice_name = voice_real_name
+                            break
+                        elif type.lower() == "siri" and cat == "siri":
+                            voice_name = voice_real_name
+                            break
 
     # Asegurar extensión .aiff
     if not filename.endswith(".aiff"):
@@ -406,26 +366,13 @@ async def save_audio(arguments: dict) -> list[TextContent]:
     stdout, stderr = await process.communicate()
 
     if process.returncode == 0:
-        return [
-            TextContent(
-                type="text",
-                text=f"✅ Audio guardado exitosamente\nArchivo: {output_path}\nVoz: {voice_name}",
-            )
-        ]
+        return (
+            f"✅ Audio guardado exitosamente\nArchivo: {output_path}\nVoz: {voice_name}"
+        )
     else:
         error_msg = stderr.decode() if stderr else "Error desconocido"
-        return [
-            TextContent(type="text", text=f"❌ Error al guardar audio: {error_msg}")
-        ]
-
-
-async def main():
-    """
-    Punto de entrada principal del servidor
-    """
-    async with stdio_server() as (read_stream, write_stream):
-        await app.run(read_stream, write_stream, app.create_initialization_options())
+        return f"❌ Error al guardar audio: {error_msg}"
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    mcp.run()

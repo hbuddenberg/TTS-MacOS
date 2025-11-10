@@ -63,6 +63,28 @@ uvx --from . tts-macos --help
 
 📖 **Ventajas de uvx**: Sin instalación, sin conflictos de versiones, siempre actualizado
 
+### ⚠️ Importante: Uso de `--refresh` con uvx
+
+Cuando uses uvx después de instalar o modificar el proyecto:
+
+```bash
+# PRIMERA VEZ después de cambios o instalación
+uvx --from . --refresh tts-macos --list --gen female
+
+# Después del refresh, usa normal
+uvx --from . tts-macos --list --gen female
+uvx --from . tts-macos --list --gen male --lang es_ES
+uvx --from . tts-macos "Hola mundo" --voice Monica
+```
+
+**¿Cuándo usar `--refresh`?**
+- Después de instalar el proyecto por primera vez
+- Después de modificar el código fuente del CLI
+- Después de actualizar las opciones o argumentos
+- Cuando veas errores como "unrecognized arguments"
+
+**Para el uso diario**: Una vez que hayas hecho `--refresh` al menos una vez, puedes usar uvx normal sin problemas.
+
 ### Opción B: Instalar como CLI global
 
 ```bash

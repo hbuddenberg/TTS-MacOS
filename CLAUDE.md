@@ -11,6 +11,30 @@ TTS Notify is a Text-to-Speech notification system for macOS that operates in th
 
 The project uses macOS's native TTS engine (`say` command), requiring zero external dependencies for speech synthesis.
 
+## Key Architecture Components
+
+### Voice Detection System
+The core innovation is the **dynamic voice detection system** (`obtener_voces_sistema()` in cli.py:31-80 and `get_system_voices()` in mcp_server.py:41-65):
+- **Auto-detection**: Parses `say -v ?` output to discover ALL system voices (~84+ voices)
+- **Flexible search**: Supports exact, partial, case-insensitive, accent-insensitive matching
+- **Categorization**: Groups voices by type (Español, Enhanced, Premium, Siri, Others)
+- **Fallback system**: Hardcoded voices if system detection fails
+- **Cross-platform resilience**: Works across different macOS versions with different voice installations
+
+### MCP Server Implementation
+- **FastMCP integration**: Uses `mcp.server.fastmcp` for async server implementation
+- **Three tools**: `speak_text`, `list_voices`, `save_audio` - all with flexible voice search
+- **Async execution**: Non-blocking subprocess calls using `asyncio.create_subprocess_exec()`
+- **Voice type forcing**: Can force specific voice variants (normal/enhanced/premium/siri)
+- **Error handling**: Comprehensive error handling with fallback to Monica
+
+### CLI Implementation
+- **argparse interface**: Full CLI with comprehensive help system
+- **Voice listing**: Both detailed and compact formats with filtering capabilities
+- **Flexible filters**: Filter by gender, language, voice type
+- **Smart project detection**: 3-strategy approach to find project paths for help examples
+- **Rate validation**: Enforces 100-300 WPM limits (cli.py:887-892)
+
 ## Project Structure
 
 ```
@@ -91,51 +115,90 @@ Voice names support **flexible search**:
 
 ## Development Commands
 
-### Testing the MCP Server
+### Environment Setup
 
 ```bash
+# Create virtual environment for development
 cd TTS_Notify
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
-python src/mcp_server.py  # Will wait for MCP connections
+
+# Install development dependencies
+pip install --upgrade pip
+```
+
+### Testing the MCP Server
+
+```bash
+# Start MCP server (will wait for connections)
+cd TTS_Notify
+python src/mcp_server.py
+
+# Test MCP server tools (requires Claude Desktop running)
+# Tools: speak_text, list_voices, save_audio
 ```
 
 ### Testing the CLI Tool
 
 ```bash
-# Direct execution
+# Direct execution (development)
 cd TTS_Notify
 python src/cli.py "Test message"
 
-# With uvx (no installation)
+# With uvx (no installation required)
 cd TTS_Notify
 uvx --from . tts-notify "Test message"
 uvx --from . tts-notify --list
+uvx --from . tts-notify --list --compact
+uvx --from . tts-notify --list --gen female
+uvx --from . tts-notify --list --lang es_ES
 uvx --from . tts-notify "Test" --voice jorge --rate 200
 
-# After installation
-tts-notify "Test message"
-tts-notify --help
+# Test voice search flexibility
+uvx --from . tts-notify "Test" --voice angelica  # finds Angélica
+uvx --from . tts-notify "Test" --voice "jorge enhanced"  # Enhanced variant
 ```
 
-### Installation
+### Installation Scripts
 
 ```bash
-# Install MCP server
+# Install MCP server (creates venv, configures Claude Desktop)
 cd TTS_Notify
-./installers/install-mcp.sh  # Creates venv, installs deps, configures Claude Desktop
+./installers/install-mcp.sh
 
-# Install CLI globally
+# Install CLI globally (interactive with 3 options)
 cd TTS_Notify
-./installers/install-cli.sh  # Interactive installer with 3 options
+./installers/install-cli.sh
 
-# Use with uvx (recommended for development)
+# Development with uvx (recommended)
 brew install uv
 uvx --from TTS_Notify tts-notify "text"
 ```
 
+### Building and Packaging
+
+```bash
+# Build package (uses hatchling build system)
+cd TTS_Notify
+pip install build
+python -m build
+
+# Install locally in development mode
+pip install -e .
+```
+
 ## Key Implementation Details
+
+### Voice Search Algorithm
+
+The project implements a **3-tier voice search system**:
+1. **Exact match**: Case-insensitive, accent-insensitive comparison
+2. **Prefix match**: Search by voice name start (prioritized)
+3. **Partial match**: Search anywhere in voice description
+4. **Fallback**: First Spanish voice, then "Monica"
+
+Located in `buscar_voz_en_sistema()` (cli.py:128-169) and `find_voice_in_system()` (mcp_server.py:124-165).
 
 ### Async Execution Pattern (mcp_server.py)
 
@@ -149,20 +212,26 @@ process = await asyncio.create_subprocess_exec(
 stdout, stderr = await process.communicate()
 ```
 
-### Voice Detection (cli.py)
+### Voice Detection and Categorization
 
-Auto-detects voices by parsing `say -v ?` output:
-- Searches for lines containing 'spanish' or 'español'
-- Extracts voice name (first word in line)
-- Creates lowercase alias mapping
-- Critical for compatibility across macOS versions with different voice installations
+Both CLI and MCP server share voice detection logic:
+- Parses `say -v ?` output to discover all system voices
+- Categorizes by type: Español, Enhanced, Premium, Siri, Others
+- Creates lowercase alias mapping for flexible search
+- Critical for compatibility across macOS versions
 
-### File Saving
+### Smart Project Path Detection
 
-Audio files are saved to Desktop by default:
-```python
-output_path = f"/Users/{subprocess.getoutput('whoami')}/Desktop/{filename}"
-```
+CLI implements 3-strategy project detection (cli.py:683-726):
+1. **Script path analysis**: Extract project path from script location
+2. **Parent directory search**: Look for mcp_server.py in current/parent directories
+3. **CWD pattern matching**: Check if CWD contains "TTS_Notify"
+
+### File Paths and Output
+
+- **Audio files**: Saved to Desktop by default using dynamic user detection
+- **Configuration**: Uses absolute paths for Claude Desktop config
+- **Python packaging**: Hatchling build system with src/ layout
 
 ## Configuration Files
 
@@ -223,18 +292,46 @@ export PATH="$HOME/.local/bin:$PATH"
 
 ## Testing
 
-No formal test suite. Manual testing:
-```bash
-# Test voice availability
-say -v Monica "test"
+### Manual Testing Strategy
 
-# Test CLI
+The project uses manual testing rather than automated tests:
+
+```bash
+# Test voice availability (macOS native)
+say -v Monica "test"
+say -v ?  # List all system voices
+
+# Test CLI functionality
 tts-notify "test" --voice monica
 tts-notify --list
+tts-notify --list --compact
+tts-notify --list --gen female
+tts-notify "test" --save output_file
+
+# Test voice search flexibility
+tts-notify "test" --voice angelica    # Should find Angélica
+tts-notify "test" --voice siri        # Should find Siri if installed
+tts-notify "test" --voice "monica enhanced"  # Should find Enhanced variant
 
 # Test MCP server (through Claude Desktop)
 "Lee en voz alta: Hola mundo"
+"Lista todas las voces disponibles"
+"Guarda este texto como audio: archivo de prueba"
+
+# Test edge cases
+tts-notify "test" --rate 100  # Minimum rate
+tts-notify "test" --rate 300  # Maximum rate
+tts-notify "test" --voice nonexistent_voice  # Should fallback to Monica
 ```
+
+### Key Test Scenarios
+
+1. **Voice Detection**: Verify system voices are detected correctly
+2. **Search Flexibility**: Test accent-insensitive, case-insensitive, partial matching
+3. **Rate Validation**: Test 100-300 WPM limits
+4. **File Saving**: Verify audio files are saved to Desktop
+5. **MCP Integration**: Test all three MCP tools through Claude Desktop
+6. **Fallback Behavior**: Verify graceful fallback when voices are missing
 
 ## Hooks for Claude Code
 
@@ -291,23 +388,36 @@ source .claude/hooks/enable-tts.sh
 echo "Test response" | ./.claude/hooks/post-response
 ```
 
-## Notes for AI Assistants
+## Critical Development Notes
 
-- Always use absolute paths when modifying `claude_desktop_config.json`
-- The CLI's voice detection is a critical feature - preserve it when making changes
-- Audio rate must be between 100-300 WPM (validated in cli.py:398-400)
-- All audio output is AIFF format (macOS native)
-- The project has extensive Spanish documentation alongside English code
-- Hooks are controlled via environment variables and run in background (non-blocking)
-- Text is filtered before TTS to remove code blocks and markdown
-- Version 1.5.0 represents a complete restructure and cleanup of the codebase
+### Code Architecture Preservation
+- **Voice detection system**: The core `obtener_voces_sistema()`/`get_system_voices()` functions are critical - maintain their logic when making changes
+- **Search algorithm**: The 3-tier voice search system must be preserved for compatibility
+- **Rate validation**: Always enforce 100-300 WPM limits (cli.py:887-892)
+- **Fallback behavior**: Maintain "Monica" as the final fallback voice
 
-## Key Differences from Previous Versions
+### Path Management
+- **Absolute paths required**: Claude Desktop config requires absolute paths - use the smart project detection
+- **Dynamic user detection**: Use `subprocess.getoutput('whoami')` for user-specific paths
+- **Desktop output**: Audio files default to Desktop using dynamic user detection
 
-- **Clean structure**: Organized under TTS_Notify/ with proper separation
-- **Updated naming**: Changed from tts-macos to tts-notify
-- **Simplified dependencies**: Removed heavy ML/AI dependencies from v2
-- **Enhanced documentation**: Complete guides in documentation/
-- **Improved installers**: Updated for new structure and paths
-- **Better voice management**: Same robust voice detection system
-- **Modern packaging**: Updated pyproject.toml for TTS Notify
+### Dependencies and Build System
+- **Zero ML dependencies**: The project intentionally uses only macOS native `say` command
+- **Hatchling build**: Uses modern Python packaging with src/ layout
+- **Optional MCP dependency**: `mcp>=1.0.0` only required for server mode
+
+### Internationalization
+- **Spanish documentation**: Extensive Spanish docs alongside English code
+- **Accent handling**: Unicode normalization removes accents for voice matching
+- **Multi-language voices**: Supports voices from multiple Spanish-speaking regions
+
+### Hook System Integration
+- **Environment-controlled**: Hooks use environment variables for configuration
+- **Background execution**: All hooks run non-blocking to avoid workflow interruption
+- **Content filtering**: Text is filtered to remove code blocks and markdown before TTS
+
+### Version History Context
+- **v1.5.0**: Complete restructure from TTS-macOS to TTS Notify
+- **Clean architecture**: Organized under TTS_Notify/ with proper separation
+- **Simplified stack**: Removed heavy ML/AI dependencies from previous versions
+- **Enhanced docs**: Complete documentation suite in documentation/

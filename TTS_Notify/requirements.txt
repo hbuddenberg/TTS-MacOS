@@ -1,0 +1,4 @@
+# Core dependencies - none required for basic TTS (uses macOS native say command)
+
+# Optional MCP server dependencies
+mcp>=1.0.0

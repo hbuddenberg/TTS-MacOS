@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-TTS-macOS is a Text-to-Speech tool for macOS that operates in three modes:
+TTS Notify is a Text-to-Speech notification system for macOS that operates in three modes:
 1. **MCP Server** - Integrates with Claude Desktop as an MCP server
 2. **CLI Tool** - Standalone command-line tool (installed globally or via uvx)
 3. **UVX Mode** - Direct execution without installation (like npx)
@@ -14,34 +14,40 @@ The project uses macOS's native TTS engine (`say` command), requiring zero exter
 ## Project Structure
 
 ```
-mcp-tts-macos/           # Main project directory
-├── server.py            # MCP server implementation
-├── src/tts_macos/       # CLI tool implementation
+TTS_Notify/              # Main project directory
+├── src/
+│   ├── mcp_server.py     # MCP server implementation
 │   ├── cli.py           # CLI logic with voice detection
 │   ├── __main__.py      # Entry point for CLI
-│   └── __init__.py
-├── setup.py             # Package configuration for pip install
-├── install.sh           # MCP server installer
-├── install-cli.sh       # CLI global installer
+│   └── __init__.py      # Package initialization
+├── documentation/
+│   ├── README.md        # Main documentation
+│   ├── INSTALLATION.md  # Detailed installation guide
+│   ├── USAGE.md         # Usage examples and advanced features
+│   └── VOICES.md        # Complete voice reference
+├── installers/
+│   ├── install-mcp.sh   # MCP server installer
+│   └── install-cli.sh   # CLI global installer
+├── pyproject.toml       # Modern Python packaging
 ├── requirements.txt     # Python dependencies (mcp>=1.0.0)
-└── examples.sh          # Usage examples
+└── LICENSE             # MIT License
 ```
 
 ## Architecture
 
-### MCP Server Mode (server.py)
+### MCP Server Mode (src/mcp_server.py)
 
-- Uses `mcp.server` library to expose three tools:
+- Uses `mcp.server.fastmcp` library to expose three tools:
   - `speak_text` - Reproduces text with configurable voice and rate, **ALL system voices supported**
   - `list_voices` - Lists **ALL** available voices categorized (Español, Enhanced, Siri, etc.)
   - `save_audio` - Saves text as AIFF audio file on Desktop with any voice
 - **Auto-detection**: Detects ALL system voices at startup (~84+ voices)
 - **Flexible search**: Supports exact, partial, case-insensitive voice matching
-- Runs asynchronously using `asyncio` and `stdio_server`
+- Runs asynchronously using `asyncio` and FastMCP
 - Executes macOS `say` command via subprocess
 - Configured in Claude Desktop via `claude_desktop_config.json`
 
-### CLI Tool Mode (src/tts_macos/cli.py)
+### CLI Tool Mode (src/cli.py)
 
 - **Key Feature**: Auto-detects **ALL** voices from system using `say -v ?` (~84+ voices)
 - **Categorizes voices**: Español, Siri, Enhanced, Premium, Others
@@ -52,19 +58,15 @@ mcp-tts-macos/           # Main project directory
   - Text-to-speech with ANY voice in the system
   - Audio file saving (AIFF format)
   - Voice listing with categorization (--list)
-  - Búsqueda flexible de voces
+  - Flexible voice search
 
-### Voice System
+## Voice System
 
-The CLI implements dynamic voice detection (`obtener_voces_sistema()` in cli.py:13-43):
+The CLI implements dynamic voice detection (`obtener_voces_sistema()` in cli.py:31-80):
 - Parses `say -v ?` output to find Spanish voices
 - Creates lowercase aliases automatically
 - Falls back to hardcoded voices if detection fails
 - This makes the tool resilient across different macOS voice configurations
-
-## Available Voices
-
-The system **auto-detects all voices** available in macOS (~84+ voices).
 
 ### Voice Categories
 
@@ -92,50 +94,50 @@ Voice names support **flexible search**:
 ### Testing the MCP Server
 
 ```bash
-cd mcp-tts-macos
+cd TTS_Notify
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
-python server.py  # Will wait for MCP connections
+python src/mcp_server.py  # Will wait for MCP connections
 ```
 
 ### Testing the CLI Tool
 
 ```bash
 # Direct execution
-cd mcp-tts-macos
-python3 src/tts_macos/cli.py "Test message"
+cd TTS_Notify
+python src/cli.py "Test message"
 
 # With uvx (no installation)
-cd mcp-tts-macos
-uvx --from . tts-macos "Test message"
-uvx --from . tts-macos --list
-uvx --from . tts-macos "Test" --voice jorge --rate 200
+cd TTS_Notify
+uvx --from . tts-notify "Test message"
+uvx --from . tts-notify --list
+uvx --from . tts-notify "Test" --voice jorge --rate 200
 
 # After installation
-tts-macos "Test message"
-tts-macos --help
+tts-notify "Test message"
+tts-notify --help
 ```
 
 ### Installation
 
 ```bash
 # Install MCP server
-cd mcp-tts-macos
-./install.sh  # Creates venv, installs deps, configures Claude Desktop
+cd TTS_Notify
+./installers/install-mcp.sh  # Creates venv, installs deps, configures Claude Desktop
 
 # Install CLI globally
-cd mcp-tts-macos
-./install-cli.sh  # Interactive installer with 3 options
+cd TTS_Notify
+./installers/install-cli.sh  # Interactive installer with 3 options
 
 # Use with uvx (recommended for development)
 brew install uv
-uvx --from . tts-macos "text"
+uvx --from TTS_Notify tts-notify "text"
 ```
 
 ## Key Implementation Details
 
-### Async Execution Pattern (server.py)
+### Async Execution Pattern (mcp_server.py)
 
 The MCP server uses `asyncio.create_subprocess_exec()` for non-blocking execution:
 ```python
@@ -172,15 +174,15 @@ Format:
 ```json
 {
   "mcpServers": {
-    "tts-macos": {
+    "tts-notify": {
       "command": "/path/to/venv/bin/python",
-      "args": ["/path/to/server.py"]
+      "args": ["/path/to/TTS_Notify/src/mcp_server.py"]
     }
   }
 }
 ```
 
-The `install.sh` script auto-generates this with absolute paths.
+The `installers/install-mcp.sh` script auto-generates this with absolute paths.
 
 ## Troubleshooting
 
@@ -206,6 +208,8 @@ export PATH="$HOME/.local/bin:$PATH"
 
 ## Version History
 
+- v1.5.0 - Complete restructure as TTS Notify, clean codebase
+- v1.4.4 - Last stable version as TTS-macOS
 - v1.2.1 - Added dynamic voice detection in CLI
 - v1.1.0 - Added CLI mode and uvx support
 - v1.0.0 - Initial MCP server implementation
@@ -225,8 +229,8 @@ No formal test suite. Manual testing:
 say -v Monica "test"
 
 # Test CLI
-tts-macos "test" --voice monica
-tts-macos --list
+tts-notify "test" --voice monica
+tts-notify --list
 
 # Test MCP server (through Claude Desktop)
 "Lee en voz alta: Hola mundo"
@@ -234,7 +238,7 @@ tts-macos --list
 
 ## Hooks for Claude Code
 
-The `.claude/hooks/` directory contains shell scripts that integrate TTS-macOS with Claude Code:
+The `.claude/hooks/` directory contains shell scripts that integrate TTS Notify with Claude Code:
 
 ### Available Hooks
 
@@ -291,8 +295,19 @@ echo "Test response" | ./.claude/hooks/post-response
 
 - Always use absolute paths when modifying `claude_desktop_config.json`
 - The CLI's voice detection is a critical feature - preserve it when making changes
-- Audio rate must be between 100-300 WPM (validated in cli.py:200)
+- Audio rate must be between 100-300 WPM (validated in cli.py:398-400)
 - All audio output is AIFF format (macOS native)
 - The project has extensive Spanish documentation alongside English code
 - Hooks are controlled via environment variables and run in background (non-blocking)
 - Text is filtered before TTS to remove code blocks and markdown
+- Version 1.5.0 represents a complete restructure and cleanup of the codebase
+
+## Key Differences from Previous Versions
+
+- **Clean structure**: Organized under TTS_Notify/ with proper separation
+- **Updated naming**: Changed from tts-macos to tts-notify
+- **Simplified dependencies**: Removed heavy ML/AI dependencies from v2
+- **Enhanced documentation**: Complete guides in documentation/
+- **Improved installers**: Updated for new structure and paths
+- **Better voice management**: Same robust voice detection system
+- **Modern packaging**: Updated pyproject.toml for TTS Notify

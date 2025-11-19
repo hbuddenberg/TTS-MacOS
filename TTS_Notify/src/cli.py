@@ -1,0 +1,907 @@
+#!/usr/bin/env python3
+"""
+TTS Notify - Sistema de notificaciones Text-to-Speech para macOS
+"""
+
+import argparse
+import subprocess
+import sys
+import unicodedata
+from pathlib import Path
+
+__version__ = "1.5.0"
+
+
+def normalize_text(text):
+    """Normaliza texto removiendo acentos para comparación
+
+    Args:
+        text: Texto a normalizar
+
+    Returns:
+        Texto sin acentos en minúsculas
+    """
+    # Normalizar a NFD (separa caracteres base de acentos)
+    nfd = unicodedata.normalize("NFD", text)
+    # Filtrar los acentos (categoría Mn = Nonspacing Mark)
+    without_accents = "".join(c for c in nfd if unicodedata.category(c) != "Mn")
+    return without_accents.lower()
+
+
+def obtener_voces_sistema(solo_espanol=False):
+    """Detecta automáticamente las voces disponibles en el sistema
+
+    Args:
+        solo_espanol: Si es True, solo retorna voces en español
+    """
+    try:
+        result = subprocess.run(
+            ["say", "-v", "?"], capture_output=True, text=True, check=True
+        )
+
+        voces = {}
+        for linea in result.stdout.split("\n"):
+            partes = linea.strip().split()
+            if not partes:
+                continue
+
+            nombre_voz = partes[0]
+            linea_lower = linea.lower()
+
+            # Si solo queremos español, filtrar
+            if solo_espanol:
+                if "spanish" in linea_lower or "español" in linea_lower:
+                    voces[nombre_voz.lower()] = nombre_voz
+            else:
+                # Incluir TODAS las voces
+                voces[nombre_voz.lower()] = nombre_voz
+
+        return voces
+    except:
+        # Fallback a voces predeterminadas si hay error
+        return {
+            "monica": "Monica",
+            "paulina": "Paulina",
+            "jorge": "Jorge",
+            "juan": "Juan",
+            "diego": "Diego",
+            "angelica": "Angelica",
+        }
+
+
+def categorizar_voces():
+    """Categoriza las voces disponibles por tipo"""
+    try:
+        result = subprocess.run(
+            ["say", "-v", "?"], capture_output=True, text=True, check=True
+        )
+
+        categorias = {
+            "espanol": [],
+            "siri": [],
+            "enhanced": [],
+            "premium": [],
+            "otras": [],
+        }
+
+        for linea in result.stdout.split("\n"):
+            if not linea.strip():
+                continue
+
+            partes = linea.strip().split()
+            if not partes:
+                continue
+
+            nombre_voz = partes[0]
+            linea_lower = linea.lower()
+
+            # Categorizar
+            if "spanish" in linea_lower or "español" in linea_lower:
+                categorias["espanol"].append((nombre_voz, linea.strip()))
+
+            if "siri" in linea_lower:
+                categorias["siri"].append((nombre_voz, linea.strip()))
+
+            if "enhanced" in linea_lower:
+                categorias["enhanced"].append((nombre_voz, linea.strip()))
+
+            if "premium" in linea_lower:
+                categorias["premium"].append((nombre_voz, linea.strip()))
+
+            # Si no está en ninguna categoría específica
+            if not any(
+                [
+                    "spanish" in linea_lower,
+                    "español" in linea_lower,
+                    "siri" in linea_lower,
+                    "enhanced" in linea_lower,
+                    "premium" in linea_lower,
+                ]
+            ):
+                categorias["otras"].append((nombre_voz, linea.strip()))
+
+        return categorias
+    except:
+        return None
+
+
+def buscar_voz_en_sistema(query):
+    """Busca una voz en el sistema de forma flexible
+
+    Args:
+        query: Nombre de la voz a buscar
+
+    Returns:
+        Nombre correcto de la voz o None
+    """
+    try:
+        result = subprocess.run(
+            ["say", "-v", "?"], capture_output=True, text=True, check=True
+        )
+
+        query_normalized = normalize_text(query)
+
+        # 1. Búsqueda exacta (case-insensitive y accent-insensitive)
+        for linea in result.stdout.split("\n"):
+            partes = linea.strip().split()
+            if partes:
+                nombre_voz = partes[0]
+                if normalize_text(nombre_voz) == query_normalized:
+                    return nombre_voz
+
+        # 2. Búsqueda por inicio de nombre (prioridad)
+        for linea in result.stdout.split("\n"):
+            partes = linea.strip().split()
+            if partes:
+                nombre_voz = partes[0]
+                if normalize_text(nombre_voz).startswith(query_normalized):
+                    return nombre_voz
+
+        # 3. Búsqueda parcial en toda la línea (accent-insensitive)
+        for linea in result.stdout.split("\n"):
+            if query_normalized in normalize_text(linea):
+                partes = linea.strip().split()
+                if partes:
+                    return partes[0]
+
+        return None
+    except:
+        return None
+
+
+# Detectar voces disponibles en el sistema
+VOCES = obtener_voces_sistema()
+
+
+def hablar(texto, voz="monica", velocidad=175, tipo=None):
+    """Reproduce texto usando TTS de macOS con búsqueda flexible de voces"""
+    # Primero intentar con las voces conocidas
+    voz_encontrada = VOCES.get(voz.lower())
+
+    # Si no está en VOCES, buscar en el sistema
+    if not voz_encontrada:
+        voz_encontrada = buscar_voz_en_sistema(voz)
+
+    # Si se especificó tipo, intentar encontrar variante específica
+    if tipo and voz_encontrada:
+        categorias = categorizar_voces()
+        for cat, voces_lista in categorias.items():
+            for nombre_voz, _ in voces_lista:
+                if nombre_voz.lower() == voz_encontrada.lower():
+                    if tipo.lower() == "normal" and cat == "espanol":
+                        voz_encontrada = nombre_voz
+                        break
+                    elif tipo.lower() == "enhanced" and cat == "enhanced":
+                        voz_encontrada = nombre_voz
+                        break
+                    elif tipo.lower() == "premium" and cat == "premium":
+                        voz_encontrada = nombre_voz
+                        break
+                    elif tipo.lower() == "siri" and cat == "siri":
+                        voz_encontrada = nombre_voz
+                        break
+
+    # Fallback final
+    if not voz_encontrada:
+        voz_encontrada = "Monica"
+
+    try:
+        subprocess.run(
+            ["say", "-v", voz_encontrada, "-r", str(velocidad), texto], check=True
+        )
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"❌ Error al reproducir: {e}", file=sys.stderr)
+        return False
+    except FileNotFoundError:
+        print("❌ Comando 'say' no encontrado. ¿Estás en macOS?", file=sys.stderr)
+        return False
+
+
+def guardar(texto, archivo, voz="monica", tipo=None):
+    """Guarda texto como archivo de audio con búsqueda flexible de voces"""
+    # Primero intentar con las voces conocidas
+    voz_encontrada = VOCES.get(voz.lower())
+
+    # Si no está en VOCES, buscar en el sistema
+    if not voz_encontrada:
+        voz_encontrada = buscar_voz_en_sistema(voz)
+
+    # Si se especificó tipo, intentar encontrar variante específica
+    if tipo and voz_encontrada:
+        categorias = categorizar_voces()
+        for cat, voces_lista in categorias.items():
+            for nombre_voz, _ in voces_lista:
+                if nombre_voz.lower() == voz_encontrada.lower():
+                    if tipo.lower() == "normal" and cat == "espanol":
+                        voz_encontrada = nombre_voz
+                        break
+                    elif tipo.lower() == "enhanced" and cat == "enhanced":
+                        voz_encontrada = nombre_voz
+                        break
+                    elif tipo.lower() == "premium" and cat == "premium":
+                        voz_encontrada = nombre_voz
+                        break
+                    elif tipo.lower() == "siri" and cat == "siri":
+                        voz_encontrada = nombre_voz
+                        break
+
+    # Fallback final
+    if not voz_encontrada:
+        voz_encontrada = "Monica"
+
+    # Asegurar extensión .aiff
+    if not archivo.endswith(".aiff"):
+        archivo += ".aiff"
+
+    try:
+        subprocess.run(["say", "-v", voz_encontrada, "-o", archivo, texto], check=True)
+        print(f"✅ Audio guardado en: {archivo}")
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"❌ Error al guardar: {e}", file=sys.stderr)
+        return False
+
+
+def listar_voces(filtro_genero=None, filtro_idioma=None):
+    """Lista todas las voces disponibles categorizadas con filtros opcionales"""
+    categorias = categorizar_voces()
+
+    if not categorias:
+        print("❌ No se pudo obtener la lista de voces del sistema")
+        return
+
+    # Normalizar filtros
+    filtro_genero_norm = None
+    if filtro_genero:
+        filtro_genero_norm = filtro_genero.lower()
+        if filtro_genero_norm in ["hombre", "male"]:
+            filtro_genero_norm = "male"
+        elif filtro_genero_norm in ["mujer", "female"]:
+            filtro_genero_norm = "female"
+
+    filtro_idioma_norm = filtro_idioma.lower() if filtro_idioma else None
+
+    # Función para verificar si una voz cumple los filtros
+    def cumple_filtros(nombre, info):
+        if filtro_genero_norm:
+            info_lower = info.lower()
+            nombre_lower = nombre.lower()
+
+            # Detectar género basado en patrones comunes
+            if filtro_genero_norm == "male":
+                indicadores_masculinos = ["male", "hombre", "masculino", "man", "boy"]
+                # Nombres típicamente masculinos
+                nombres_masculinos = [
+                    "jorge",
+                    "juan",
+                    "diego",
+                    "carlos",
+                    "alberto",
+                    "rey",
+                    "rocko",
+                    "reed",
+                    "grandpa",
+                ]
+
+                if not any(p in info_lower for p in indicadores_masculinos) and not any(
+                    n in nombre_lower for n in nombres_masculinos
+                ):
+                    return False
+
+            elif filtro_genero_norm == "female":
+                indicadores_femeninos = [
+                    "female",
+                    "mujer",
+                    "femenino",
+                    "woman",
+                    "girl",
+                    "lady",
+                ]
+                # Nombres típicamente femeninos
+                nombres_femeninos = [
+                    "monica",
+                    "paulina",
+                    "angelica",
+                    "maria",
+                    "sandy",
+                    "flo",
+                    "shelley",
+                    "grandma",
+                    "marisol",
+                    "isabela",
+                    "soledad",
+                    "francisca",
+                    "mónica",
+                ]
+
+                if not any(p in info_lower for p in indicadores_femeninos) and not any(
+                    n in nombre_lower for n in nombres_femeninos
+                ):
+                    return False
+
+        if filtro_idioma_norm:
+            info_lower = info.lower()
+            # Buscar códigos de idioma o nombres de idioma
+            idioma_keywords = {
+                "es_es": ["es_es", "spain", "españa", "spanish"],
+                "es_mx": ["es_mx", "mexico", "méxico"],
+                "es_ar": ["es_ar", "argentina"],
+                "es_cl": ["es_cl", "chile"],
+                "es_co": ["es_co", "colombia"],
+                "en_us": ["en_us", "united", "english"],
+            }
+
+            if filtro_idioma_norm in idioma_keywords:
+                keywords = idioma_keywords[filtro_idioma_norm]
+                if not any(keyword in info_lower for keyword in keywords):
+                    return False
+            else:
+                # Búsqueda directa del texto
+                if filtro_idioma_norm not in info_lower:
+                    return False
+
+        return True
+
+    # Aplicar filtros a cada categoría
+    if filtro_genero_norm or filtro_idioma_norm:
+        # Filtrar cada categoría
+        for cat in categorias:
+            categorias[cat] = [
+                (n, i) for n, i in categorias[cat] if cumple_filtros(n, i)
+            ]
+
+    print("\n🎙️  VOCES DISPONIBLES EN EL SISTEMA")
+    if filtro_genero_norm or filtro_idioma_norm:
+        filtros_activos = []
+        if filtro_genero_norm:
+            filtros_activos.append(f"Género: {filtro_genero_norm}")
+        if filtro_idioma_norm:
+            filtros_activos.append(f"Idioma: {filtro_idioma_norm}")
+        print("═══════════════════════════════════════════════════════════")
+        print(f"🔍 FILTROS ACTIVOS: {', '.join(filtros_activos)}")
+    print("═══════════════════════════════════════════════════════════")
+    print("")
+
+    # Voces en Español
+    if categorias["espanol"]:
+        print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        print(f"📍 VOCES EN ESPAÑOL ({len(categorias['espanol'])})")
+        print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        for nombre, info in sorted(categorias["espanol"]):
+            print(f"  {nombre:15} {info[len(nombre) :].strip()}")
+        print("")
+
+    # Voces Enhanced/Premium
+    enhanced_premium = categorias["enhanced"] + categorias["premium"]
+    if enhanced_premium:
+        print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        print(
+            f"⭐ VOCES ENHANCED/PREMIUM ({len(set([v[0] for v in enhanced_premium]))})"
+        )
+        print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        # Eliminar duplicados manteniendo orden
+        seen = set()
+        for nombre, info in enhanced_premium:
+            if nombre not in seen:
+                seen.add(nombre)
+                print(f"  {nombre:15} {info[len(nombre) :].strip()}")
+        print("")
+
+    # Voces de Siri
+    print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+    print("🤖 VOCES DE SIRI")
+    print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+    if categorias["siri"]:
+        for nombre, info in sorted(categorias["siri"]):
+            print(f"  {nombre:15} {info[len(nombre) :].strip()}")
+        print("")
+        print("  ⚠️  Nota: Las voces de Siri pueden estar instaladas pero")
+        print("     NO son accesibles con 'say -v' por limitaciones de Apple")
+    else:
+        print("  ⚠️  LIMITACIÓN TÉCNICA:")
+        print("  Las voces de Siri NO son accesibles con este comando")
+        print("  por restricciones de Apple en el sistema TTS.")
+        print("")
+        print("  ✅ ALTERNATIVA RECOMENDADA:")
+        print("  Usa voces Enhanced/Premium que ofrecen calidad similar:")
+        print("  • Mónica (Enhanced)   - España, calidad profesional")
+        print("  • Jorge (Enhanced)    - España, voz masculina natural")
+        print("  • Angélica (Enhanced) - México, voz femenina clara")
+        print("")
+        print("  📖 Más información: ver archivo SIRI-VOICES-GUIDE.md")
+    print("")
+
+    # Total
+    total_voces = len(VOCES)
+    print("═══════════════════════════════════════════════════════════")
+    print(f"  Total de voces: {total_voces}")
+    print("═══════════════════════════════════════════════════════════")
+    print("")
+    print("💡 Uso:")
+    print('  tts-notify "Hola mundo" --voice Monica')
+    print('  tts-notify "Hola mundo" --voice Siri')
+    print('  tts-notify "Hola mundo" --voice Angélica')
+    print("")
+
+
+def listar_voces_compact(filtro_genero=None, filtro_idioma=None, filtro_tipo=None):
+    """Lista voces en formato compacto: voz, idioma, localizaciones, género"""
+    categorias = categorizar_voces()
+
+    if not categorias:
+        print("❌ No se pudo obtener la lista de voces del sistema")
+        return
+
+    # Normalizar filtros
+    filtro_genero_norm = None
+    if filtro_genero:
+        filtro_genero_norm = filtro_genero.lower()
+        if filtro_genero_norm in ["hombre", "male"]:
+            filtro_genero_norm = "male"
+        elif filtro_genero_norm in ["mujer", "female"]:
+            filtro_genero_norm = "female"
+
+    filtro_idioma_norm = filtro_idioma.lower() if filtro_idioma else None
+
+    # Función para verificar si una voz cumple los filtros
+    def cumple_filtros(nombre, info):
+        if filtro_genero_norm:
+            info_lower = info.lower()
+            nombre_lower = nombre.lower()
+
+            if filtro_genero_norm == "male":
+                indicadores_masculinos = ["male", "hombre", "masculino", "man", "boy"]
+                nombres_masculinos = [
+                    "jorge",
+                    "juan",
+                    "diego",
+                    "carlos",
+                    "alberto",
+                    "rey",
+                    "rocko",
+                    "reed",
+                    "grandpa",
+                ]
+                if not any(p in info_lower for p in indicadores_masculinos) and not any(
+                    n in nombre_lower for n in nombres_masculinos
+                ):
+                    return False
+            elif filtro_genero_norm == "female":
+                indicadores_femeninos = [
+                    "female",
+                    "mujer",
+                    "femenino",
+                    "woman",
+                    "girl",
+                    "lady",
+                ]
+                nombres_femeninos = [
+                    "monica",
+                    "paulina",
+                    "angelica",
+                    "maria",
+                    "sandy",
+                    "flo",
+                    "shelley",
+                    "grandma",
+                    "marisol",
+                    "isabela",
+                    "soledad",
+                    "francisca",
+                    "mónica",
+                ]
+                if not any(p in info_lower for p in indicadores_femeninos) and not any(
+                    n in nombre_lower for n in nombres_femeninos
+                ):
+                    return False
+
+        if filtro_idioma_norm:
+            info_lower = info.lower()
+            idioma_keywords = {
+                "es_es": ["es_es", "spain", "españa", "spanish"],
+                "es_mx": ["es_mx", "mexico", "méxico"],
+                "es_ar": ["es_ar", "argentina"],
+                "es_cl": ["es_cl", "chile"],
+                "es_co": ["es_co", "colombia"],
+                "en_us": ["en_us", "united", "english"],
+            }
+
+            if filtro_idioma_norm in idioma_keywords:
+                keywords = idioma_keywords[filtro_idioma_norm]
+                if not any(keyword in info_lower for keyword in keywords):
+                    return False
+            else:
+                if filtro_idioma_norm not in info_lower:
+                    return False
+
+        return True
+
+    # Recolectar todas las voces únicas con sus localizaciones
+    voces_unicas = {}
+
+    # Unificar todas las categorías
+    todas_categorias = []
+    for cat in ["espanol", "enhanced", "premium", "siri"]:
+        todas_categorias.extend(categorias[cat])
+
+    # Agrupar por nombre de voz
+    for nombre, info in todas_categorias:
+        if cumple_filtros(nombre, info):
+            if nombre not in voces_unicas:
+                voces_unicas[nombre] = {
+                    "info": info,
+                    "localizaciones": set(),
+                    "idiomas": set(),
+                }
+
+            # Extraer localización
+            info_lower = info.lower()
+            if "es_es" in info_lower or "spain" in info_lower or "españa" in info_lower:
+                voces_unicas[nombre]["localizaciones"].add("es_ES")
+                voces_unicas[nombre]["idiomas"].add("Español")
+            elif (
+                "es_mx" in info_lower
+                or "mexico" in info_lower
+                or "méxico" in info_lower
+            ):
+                voces_unicas[nombre]["localizaciones"].add("es_MX")
+                voces_unicas[nombre]["idiomas"].add("Español")
+            elif "es_ar" in info_lower or "argentina" in info_lower:
+                voces_unicas[nombre]["localizaciones"].add("es_AR")
+                voces_unicas[nombre]["idiomas"].add("Español")
+            elif "es_cl" in info_lower or "chile" in info_lower:
+                voces_unicas[nombre]["localizaciones"].add("es_CL")
+                voces_unicas[nombre]["idiomas"].add("Español")
+            elif "es_co" in info_lower or "colombia" in info_lower:
+                voces_unicas[nombre]["localizaciones"].add("es_CO")
+                voces_unicas[nombre]["idiomas"].add("Español")
+            elif (
+                "en_us" in info_lower
+                or "united" in info_lower
+                or "english" in info_lower
+            ):
+                voces_unicas[nombre]["localizaciones"].add("en_US")
+                voces_unicas[nombre]["idiomas"].add("English")
+
+    # Determinar género
+    def detectar_genero(nombre):
+        nombre_lower = nombre.lower()
+        if any(
+            n in nombre_lower
+            for n in [
+                "monica",
+                "paulina",
+                "angelica",
+                "maria",
+                "sandy",
+                "flo",
+                "shelley",
+                "grandma",
+                "marisol",
+                "isabela",
+                "soledad",
+                "francisca",
+                "mónica",
+                "jimena",
+                "angélica",
+                "angélica",
+            ]
+        ):
+            return "mujer"
+        elif any(
+            n in nombre_lower
+            for n in [
+                "jorge",
+                "juan",
+                "diego",
+                "carlos",
+                "alberto",
+                "rey",
+                "rocko",
+                "reed",
+                "grandpa",
+            ]
+        ):
+            return "hombre"
+        else:
+            return "desconocido"
+
+    # Recolectar información de tipos para cada voz
+    def obtener_tipos_voz(nombre):
+        tipos = []
+
+        if nombre in [v[0] for v in categorias["espanol"]]:
+            tipos.append("Normal")
+        if nombre in [v[0] for v in categorias["enhanced"]]:
+            tipos.append("Enhanced")
+        if nombre in [v[0] for v in categorias["premium"]]:
+            tipos.append("Premium")
+        if nombre in [v[0] for v in categorias["siri"]]:
+            tipos.append("Siri")
+
+        return ", ".join(tipos) if tipos else "Normal"
+
+    # Mostrar resultados
+    print("\n📋 LISTA COMPACTA DE VOCES")
+    print("═══════════════════════════════════════════════════════════════════")
+    print(
+        f"{'Voz':<15} {'Tipo':<20} {'Idioma':<10} {'Localizaciones':<20} {'Género':<10}"
+    )
+    print("──────────────────────────────────────────────────────────────────────────")
+
+    for nombre in sorted(voces_unicas.keys()):
+        datos = voces_unicas[nombre]
+        idioma = ", ".join(datos["idiomas"]) if datos["idiomas"] else "Otros"
+        localizaciones = (
+            ", ".join(sorted(datos["localizaciones"]))
+            if datos["localizaciones"]
+            else "N/A"
+        )
+        genero = detectar_genero(nombre)
+        tipo = obtener_tipos_voz(nombre)
+        print(f"{nombre:<15} {tipo:<20} {idioma:<10} {localizaciones:<20} {genero:<10}")
+
+    print("══════════════════════════════════════════════════════════")
+    print(f"Total de voces únicas: {len(voces_unicas)}")
+    print("")
+    print("💡 Uso:")
+    print('  tts-notify "Hola mundo" --voice Monica')
+    print("  tts-notify --list --compact --gen female     # Filtro combinado")
+    print("  tts-notify --list --compact --lang es_ES     # Solo españolas")
+    print("")
+
+
+def main():
+    # Determinar voz por defecto (la primera disponible)
+    voz_default = list(VOCES.keys())[0] if VOCES else "monica"
+
+    # Detectar ruta del proyecto REAL para el ejemplo de MCP
+    import os
+    import sys
+
+    # Estrategia 1: Buscar en la ruta del script actual
+    script_path = Path(__file__).resolve()
+    project_dir = None
+
+    # Si el script está en TTS_Notify/src/cli.py
+    if "TTS_Notify" in str(script_path):
+        # Extraer la ruta hasta TTS_Notify
+        parts = str(script_path).split("TTS_Notify")
+        potential_dir = Path(parts[0] + "TTS_Notify")
+        if (potential_dir / "src" / "mcp_server.py").exists():
+            project_dir = potential_dir
+
+    # Estrategia 2: Buscar mcp_server.py en el directorio actual o sus padres
+    if project_dir is None:
+        current_dir = Path.cwd()
+        for _ in range(5):
+            if (current_dir / "src" / "mcp_server.py").exists():
+                project_dir = current_dir
+                break
+            if (current_dir / "TTS_Notify" / "src" / "mcp_server.py").exists():
+                project_dir = current_dir / "TTS_Notify"
+                break
+            current_dir = current_dir.parent
+            if str(current_dir) == "/":
+                break
+
+    # Estrategia 3: Buscar 'TTS_Notify' en el cwd
+    if project_dir is None:
+        cwd = Path.cwd()
+        if "TTS_Notify" in str(cwd):
+            parts = str(cwd).split("TTS_Notify")
+            project_dir = Path(parts[0] + "TTS_Notify")
+        else:
+            # Última opción: usar cwd con nota
+            project_dir = cwd
+
+    ejemplo_venv = f"{project_dir}/venv/bin/python"
+    ejemplo_server = f"{project_dir}/src/mcp_server.py"
+
+    # Verificar si detectamos el proyecto correctamente
+    if Path(ejemplo_server).exists():
+        nota_rutas = "✅ Rutas detectadas automáticamente del proyecto actual"
+    else:
+        nota_rutas = "⚠️  Ejecuta este comando desde el directorio del proyecto para ver rutas correctas"
+
+    parser = argparse.ArgumentParser(
+        description="🔔  TTS Notify - Sistema de notificaciones Text-to-Speech para macOS",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=f"""
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+EJEMPLOS DE USO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📦 Instalado globalmente:
+  tts-notify "Hola mundo"
+  tts-notify "Buenos días" --voice Monica
+  tts-notify "Texto rápido" --rate 250
+  tts-notify "Mensaje" --save mi_audio.aiff
+  tts-notify --list
+
+🚀 Con uvx (sin instalar):
+  uvx --from /ruta/al/proyecto tts-notify "Hola mundo"
+  uvx --from . tts-notify "Buenos días" --voice Jorge --rate 200
+  uvx --from . tts-notify --list
+  uvx --from . tts-notify --list --gen female
+  uvx --from . tts-notify --list --lang es_ES
+  uvx --from . tts-notify --list --compact
+  uvx --from . tts-notify --list --compact --gen female
+
+  # Crear alias para uso frecuente:
+  alias tts='uvx --from ~/ruta/al/proyecto tts-notify'
+  tts "Ahora es más fácil"
+  tts --list --gen male
+  tts --list --lang es_MX
+  tts --list --compact
+  tts --list --compact --gen female --lang es_ES
+
+🎭 Voces Enhanced/Premium:
+  tts-notify "Calidad superior" --voice "Angélica (Enhanced)"
+  tts-notify "Voz premium" --voice "Marisol (Premium)"
+
+  # Forzar variante específica con --type:
+  tts-notify "Hola" --voice Marisol --type premium
+  tts-notify "Hola" --voice Marisol --type enhanced
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+BÚSQUEDA FLEXIBLE DE VOCES
+
+Puedes usar nombres parciales o sin acentos:
+  --voice monica       → Mónica
+  --voice angelica     → Angélica
+  --voice siri         → Siri Female (si está instalada)
+  --voice "jorge enh"  → Jorge (Enhanced)
+
+Total de voces detectadas: {len(VOCES)}
+Usa --list para ver todas las voces disponibles organizadas por categoría
+Usa --list --gen female --lang es_ES para filtrar por género e idioma
+Usa --list --compact para vista resumida: voz, tipo, idioma, localizaciones, género
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🤖 CONFIGURACIÓN DEL SERVIDOR MCP (para Claude Desktop)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+{nota_rutas}
+
+Archivo: ~/Library/Application Support/Claude/claude_desktop_config.json
+
+{{
+  "mcpServers": {{
+    "tts-notify": {{
+      "command": "{ejemplo_venv}",
+      "args": ["{ejemplo_server}"]
+    }}
+  }}
+}}
+
+⚠️  Importante:
+  • Usa rutas ABSOLUTAS (ajusta las rutas según tu instalación)
+  • Asegúrate de crear el venv primero: python3 -m venv venv
+  • Instala dependencias: pip install -r requirements.txt
+
+💡 Instalación automática: ./installers/install-mcp.sh
+📖 Documentación completa: documentation/README.md
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        """,
+    )
+
+    parser.add_argument("texto", nargs="?", help="Texto a convertir en voz")
+
+    parser.add_argument(
+        "-v",
+        "--voice",
+        default=voz_default,
+        help=f"Voz a utilizar - cualquier voz del sistema (default: {voz_default}). Usa --list para ver todas las opciones",
+    )
+
+    parser.add_argument(
+        "-r",
+        "--rate",
+        type=int,
+        default=175,
+        help="Velocidad en palabras por minuto (100-300, default: 175)",
+    )
+
+    parser.add_argument(
+        "-s",
+        "--save",
+        metavar="ARCHIVO",
+        help="Guardar audio en archivo (formato .aiff)",
+    )
+
+    parser.add_argument(
+        "-l", "--list", action="store_true", help="Listar voces disponibles"
+    )
+
+    parser.add_argument(
+        "--compact",
+        action="store_true",
+        help="Mostrar lista compacta: voz, tipo, idioma, localizaciones, género",
+    )
+
+    parser.add_argument(
+        "--type",
+        choices=["normal", "enhanced", "premium", "siri"],
+        help="Filtrar voces por tipo o forzar variante (normal/enhanced/premium/siri)",
+    )
+
+    parser.add_argument(
+        "--gen",
+        "--gender",
+        choices=["male", "female", "hombre", "mujer"],
+        help="Filtrar voces por género (male/female/hombre/mujer)",
+    )
+
+    parser.add_argument(
+        "--lang",
+        "--language",
+        help="Filtrar voces por idioma (ej: es_ES, es_MX, en_US)",
+    )
+
+    parser.add_argument(
+        "--version", action="version", version=f"tts-notify {__version__}"
+    )
+
+    args = parser.parse_args()
+
+    # Listar voces (con filtros si se especificaron)
+    if args.list:
+        if args.compact:
+            listar_voces_compact(
+                filtro_genero=args.gen, filtro_idioma=args.lang, filtro_tipo=args.type
+            )
+        else:
+            listar_voces(
+                filtro_genero=args.gen, filtro_idioma=args.lang, filtro_tipo=args.type
+            )
+        return 0
+
+    # Validar que hay texto
+    if not args.texto:
+        parser.print_help()
+        return 1
+
+    # Validar velocidad
+    if not 100 <= args.rate <= 300:
+        print(
+            "⚠️  Velocidad debe estar entre 100 y 300 palabras por minuto",
+            file=sys.stderr,
+        )
+        return 1
+
+    # Guardar archivo
+    if args.save:
+        success = guardar(args.texto, args.save, args.voice, args.type)
+        if not success:
+            return 1
+
+    # Reproducir audio
+    success = hablar(args.texto, args.voice, args.rate, args.type)
+
+    return 0 if success else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

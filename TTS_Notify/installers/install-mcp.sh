@@ -29,10 +29,28 @@ echo "📁 Directorio del proyecto: $PROJECT_DIR"
 # Crear entorno virtual
 echo ""
 echo "🔨 Creando entorno virtual..."
+
+# Eliminar entorno virtual existente si existe
+if [ -d "$PROJECT_DIR/venv" ]; then
+    echo "🗑️  Eliminando entorno virtual existente..."
+    rm -rf "$PROJECT_DIR/venv"
+fi
+
+# Crear nuevo entorno virtual
 python3 -m venv "$PROJECT_DIR/venv"
+
+# Verificar que el entorno virtual se creó correctamente
+if [ ! -f "$PROJECT_DIR/venv/bin/python" ]; then
+    echo "❌ Error al crear el entorno virtual"
+    exit 1
+fi
 
 # Activar entorno virtual
 source "$PROJECT_DIR/venv/bin/activate"
+
+# Verificar que estamos usando el Python correcto
+echo "🐍 Python en uso: $(which python)"
+echo "🐍 Versión de Python: $(python --version)"
 
 # Instalar dependencias
 echo "📥 Instalando dependencias..."
@@ -94,14 +112,45 @@ echo ""
 echo "🧪 Probando instalación..."
 echo "Intentando reproducir un mensaje de prueba..."
 
+# Verificar que el intérprete de Python existe y funciona
+if [ ! -f "$PROJECT_DIR/venv/bin/python" ]; then
+    echo "❌ El intérprete de Python no se encuentra en la ruta esperada"
+    exit 1
+fi
+
+# Probar el intérprete directamente
+"$PROJECT_DIR/venv/bin/python" --version > /dev/null 2>&1
+if [ $? -ne 0 ]; then
+    echo "❌ El intérprete de Python no funciona correctamente"
+    exit 1
+fi
+
+# Probar el comando say y reproducir mensaje
 "$PROJECT_DIR/venv/bin/python" -c "
 import subprocess
+import sys
 try:
+    # Verificar que el comando say existe
+    subprocess.run(['which', 'say'], check=True, capture_output=True)
+    print('✅ Comando say encontrado')
+
+    # Probar reproducción de audio
     subprocess.run(['say', '-v', 'Monica', 'Instalación exitosa'], check=True)
     print('✅ Test de audio exitoso')
+except subprocess.CalledProcessError as e:
+    print(f'⚠️  Error en test: {e}')
+    sys.exit(1)
 except Exception as e:
-    print(f'⚠️  Error en test de audio: {e}')
+    print(f'⚠️  Error inesperado: {e}')
+    sys.exit(1)
 "
+
+if [ $? -eq 0 ]; then
+    echo "✅ Prueba de instalación exitosa"
+else
+    echo "❌ Error en la prueba de instalación"
+    exit 1
+fi
 
 echo ""
 echo "================================================"
@@ -115,7 +164,7 @@ echo "2. Abre Claude Desktop nuevamente"
 echo "3. Deberías ver el servidor MCP conectado"
 echo "4. Prueba diciendo: 'Lee este texto en voz alta: Hola mundo'"
 echo ""
-echo "📖 Para más información, consulta documentation/README.md"
+echo "📖 Para más información, consulta README.md"
 echo ""
 echo "🎤 Voces españolas populares:"
 echo "   • Jorge (España - Hombre)"

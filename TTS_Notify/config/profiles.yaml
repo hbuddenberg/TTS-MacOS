@@ -1,0 +1,143 @@
+# Configuration profiles for TTS Notify v2
+# These profiles can be selected using the TTS_NOTIFY_PROFILE environment variable
+
+profiles:
+  claude-desktop:
+    # Profile for Claude Desktop MCP integration
+    description: "Optimized for Claude Desktop with Spanish voice settings"
+    voice: "jorge"
+    rate: 175
+    language: "es"
+    quality: "enhanced"
+    max_text_length: 2000
+    confirmation: false
+    log_level: "INFO"
+    cache_enabled: true
+    profile: "claude-desktop"
+
+  api-server:
+    # Profile for API server deployment
+    description: "Optimized for API server with higher concurrency"
+    max_concurrent: 10
+    timeout: 120
+    cache_enabled: true
+    log_level: "INFO"
+    api_port: 8000
+    max_text_length: 10000
+    profile: "api-server"
+
+  cli-default:
+    # Default CLI profile
+    description: "Standard CLI usage settings"
+    cli_format: "table"
+    auto_save: false
+    verbose: false
+    confirmation: false
+    profile: "cli-default"
+
+  development:
+    # Development profile with debugging enabled
+    description: "Development settings with full debugging"
+    debug_mode: true
+    verbose: true
+    log_level: "DEBUG"
+    cache_ttl: 60
+    max_text_length: 10000
+    structured_logging: false
+    profile: "development"
+
+  production:
+    # Production profile with conservative settings
+    description: "Production settings with minimal logging"
+    max_concurrent: 5
+    timeout: 60
+    log_level: "WARN"
+    experimental: false
+    cache_ttl: 600
+    debug_mode: false
+    verbose: false
+    profile: "production"
+
+  accessibility:
+    # Profile for accessibility features
+    description: "Settings optimized for accessibility"
+    volume: 1.0
+    confirmation: true
+    rate: 150
+    verbose: true
+    auto_save: true
+    max_text_length: 10000
+    profile: "accessibility"
+
+  performance:
+    # Profile optimized for performance
+    description: "High performance settings with minimal overhead"
+    max_concurrent: 3
+    cache_enabled: true
+    cache_ttl: 3600
+    timeout: 30
+    log_level: "ERROR"
+    max_text_length: 2500
+    profile: "performance"
+
+  testing:
+    # Profile for testing environments
+    description: "Settings suitable for automated testing"
+    voice: "monica"
+    rate: 200
+    timeout: 30
+    log_level: "DEBUG"
+    cache_enabled: false
+    verbose: true
+    output_dir: "/tmp/tts_notify_test"
+    profile: "testing"
+
+  demo:
+    # Profile for demonstrations
+    description: "Settings optimized for demos and presentations"
+    voice: "jorge"
+    rate: 160
+    volume: 0.9
+    confirmation: true
+    auto_save: true
+    verbose: true
+    max_text_length: 1000
+    profile: "demo"
+
+  spanish:
+    # Spanish language profile
+    description: "Optimized for Spanish language content"
+    voice: "monica"
+    rate: 175
+    language: "es"
+    quality: "enhanced"
+    profile: "spanish"
+
+  english:
+    # English language profile
+    description: "Optimized for English language content"
+    voice: "alex"
+    rate: 180
+    language: "en"
+    quality: "enhanced"
+    profile: "english"
+
+  fast:
+    # Fast processing profile
+    description: "Optimized for speed over quality"
+    rate: 250
+    quality: "basic"
+    cache_enabled: true
+    timeout: 30
+    max_text_length: 500
+    profile: "fast"
+
+  quality:
+    # High quality profile
+    description: "Optimized for audio quality over speed"
+    rate: 150
+    quality: "premium"
+    sample_rate: 44100
+    timeout: 120
+    max_text_length: 2000
+    profile: "quality"

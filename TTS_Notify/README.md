@@ -96,36 +96,54 @@ tts-notify --mode api
 
 ## 🏗️ Architecture
 
+### Core Components
+
 ```
-TTS_Notify/
-├── src/                     # Source code
-│   ├── main.py              # Main orchestrator
-│   ├── core/                # Core functionality (6 modules)
-│   │   ├── config_manager.py    # Intelligent configuration
-│   │   ├── voice_system.py      # Voice detection & management
-│   │   ├── tts_engine.py        # Abstract TTS engine
-│   │   ├── models.py            # Data models with validation
-│   │   └── exceptions.py        # Custom exception hierarchy
-│   ├── ui/                  # User interfaces
-│   │   ├── cli/            # Command-line interface
-│   │   ├── mcp/            # MCP server for Claude Desktop
-│   │   └── api/            # REST API with FastAPI
-│   ├── utils/               # Utility modules
-│   ├── installer/          # Installer module
-│   └── plugins/            # Plugin system foundation
-├── installers/             # Installation scripts
-├── tests/                  # Test suite
-├── config/                 # Configuration files
-└── docs/                   # Documentation
+src/
+├── core/                    # Core TTS functionality
+│   ├── config_manager.py   # Intelligent configuration with 30+ env vars
+│   ├── voice_system.py     # Voice detection & management (84+ voices)
+│   ├── tts_engine.py       # Abstract TTS engine with macOS implementation
+│   ├── models.py           # Pydantic data models with validation
+│   └── exceptions.py       # Custom exception hierarchy
+├── ui/                      # User interfaces
+│   ├── cli/                # Command-line interface
+│   │   ├── main.py         # CLI implementation with feature parity
+│   │   └── __main__.py     # CLI entry point
+│   ├── mcp/                # MCP server for Claude Desktop
+│   │   ├── server.py       # FastMCP server with 4 tools
+│   │   └── __main__.py     # MCP entry point
+│   └── api/                # REST API with FastAPI
+│       ├── server.py       # FastAPI server with OpenAPI docs
+│       └── __main__.py     # API entry point
+├── utils/                   # Utility modules
+│   ├── async_utils.py      # Async utilities and helpers
+│   └── text_normalizer.py  # Text processing and normalization
+├── plugins/                 # Plugin system foundation
+│   └── __init__.py         # Plugin base classes and registry
+├── installer/               # UV-based unified installer
+│   └── installer.py        # Cross-platform installation logic
+├── main.py                  # Main orchestrator with intelligent mode detection
+├── __main__.py             # Package entry point
+└── __init__.py             # Package initialization
 ```
+
+### Main Orchestrator
+
+The `src/main.py` serves as the central delegation hub with intelligent mode detection:
+
+- **Auto-detection**: Automatically detects execution mode from environment variables and arguments
+- **Interface Creation**: Creates and manages appropriate interface instances
+- **Configuration Loading**: Loads and validates configuration from all sources
+- **Error Handling**: Comprehensive error handling with fallback behaviors
 
 ### Interface Overview
 
 | Interface | Use Case | Entry Point | Key Features |
-|-----------|----------|-------------|-------------|
-| **CLI** | Command-line usage, scripts | `tts-notify` | Voice control, file saving, filtering |
-| **MCP** | Claude Desktop integration | `tts-notify --mode mcp` | 4 MCP tools, flexible voice search |
-| **API** | Web applications, services | `tts-notify --mode api` | REST endpoints, OpenAPI docs, async |
+|-----------|----------|-------------|--------------|
+| **CLI** | Command-line usage, scripts | `python -m tts_notify` or `tts-notify` | Full voice control, file saving, filtering, system info |
+| **MCP** | Claude Desktop integration | `python -m tts_notify --mode mcp` | 4 MCP tools, flexible voice search, async processing |
+| **API** | Web applications, services | `python -m tts_notify --mode api` | REST endpoints, OpenAPI docs, async, concurrent requests |
 
 ## ⚙️ Configuration
 
@@ -211,10 +229,16 @@ pytest --cov=src
 
 ## 📖 Documentation
 
-- **[README-v2.md](README-v2.md)** - Complete documentation
+### User Documentation
+- **[docs/INSTALLATION.md](docs/INSTALLATION.md)** - Comprehensive installation guide
+- **[docs/USAGE.md](docs/USAGE.md)** - Complete usage guide for all interfaces
+- **[docs/VOICES.md](docs/VOICES.md)** - Voice reference with 84+ voice details
+
+### Developer Documentation
+- **[README-v2.md](README-v2.md)** - Complete technical documentation
+- **[CLAUDE.md](CLAUDE.md)** - Development guide for Claude Code
 - **[CHANGELOG-v2.md](CHANGELOG-v2.md)** - Version history and changes
 - **[MIGRATION-GUIDE-v2.md](MIGRATION-GUIDE-v2.md)** - Migration from v1.5.0
-- **[CLAUDE.md](CLAUDE.md)** - Development guide for Claude Code
 
 ## 🔧 Installation Scripts
 

@@ -4,22 +4,28 @@ build-backend = "hatchling.build"
 
 [project]
 name = "tts-notify"
-version = "1.5.0"
-description = "Text-to-Speech notification system for macOS using native TTS engine"
-readme = "documentation/README.md"
+version = "2.0.0"
+description = "Modular Text-to-Speech notification system for macOS with CLI, MCP, and REST API interfaces"
+readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
-keywords = ["tts", "text-to-speech", "macos", "voice", "speech", "audio", "cli", "mcp", "notifications"]
+keywords = ["tts", "text-to-speech", "macos", "voice", "speech", "audio", "cli", "mcp", "api", "notifications", "claude-desktop"]
 authors = [
     { name = "TTS Notify Project" }
+]
+maintainers = [
+    { name = "TTS Notify Project", email = "tts-notify@example.com" }
 ]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Environment :: Console",
+    "Environment :: Web Environment",
     "Intended Audience :: Developers",
     "Intended Audience :: End Users/Desktop",
     "License :: OSI Approved :: MIT License",
     "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
@@ -27,32 +33,178 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
     "Topic :: Multimedia :: Sound/Audio :: Speech",
+    "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Utilities",
-    "Topic :: Office/Business :: Notification",
+    "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 
-dependencies = []
+# Core dependencies for all installation modes
+dependencies = [
+    "pydantic>=2.0.0",
+    "pyyaml>=6.0",
+]
 
+# Optional dependencies for different installation modes
 [project.optional-dependencies]
-mcp = ["mcp>=1.0.0"]
+# MCP server mode
+mcp = [
+    "mcp>=1.0.0",
+]
+
+# REST API mode
+api = [
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    "python-multipart>=0.0.6",
+]
+
+# Development mode
+dev = [
+    "mcp>=1.0.0",
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    "python-multipart>=0.0.6",
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.0.0",
+    "black>=23.0.0",
+    "isort>=5.12.0",
+    "flake8>=6.0.0",
+    "mypy>=1.0.0",
+]
+
+# Complete installation with all features
+all = [
+    "mcp>=1.0.0",
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    "python-multipart>=0.0.6",
+]
 
 [project.urls]
 Homepage = "https://github.com/yourusername/tts-notify"
 Repository = "https://github.com/yourusername/tts-notify"
 Documentation = "https://github.com/yourusername/tts-notify#readme"
 Issues = "https://github.com/yourusername/tts-notify/issues"
+Changelog = "https://github.com/yourusername/tts-notify/blob/main/CHANGELOG.md"
 
+# Command-line entry points
 [project.scripts]
-tts-notify = "cli:main"
-tts = "cli:main"
+tts-notify = "tts_notify.main:sync_main"
+
+# Console scripts for specific modes
+tts-notify-cli = "tts_notify.ui.cli.main:sync_main"
+tts-notify-mcp = "tts_notify.ui.mcp.server:main"
+tts-notify-api = "tts_notify.ui.api.server:main"
+
+[project.gui-scripts]
+# GUI scripts (if needed in future versions)
 
 [tool.hatch.build.targets.wheel]
-packages = ["src"]
+packages = ["src/tts_notify"]
 
 [tool.hatch.build.targets.sdist]
 include = [
     "/src",
-    "/documentation",
+    "/config",
+    "/docs",
     "/installers",
     "/LICENSE",
+    "/pyproject.toml",
+    "/README.md",
+    "/CHANGELOG-v2.md",
+]
+exclude = [
+    "/src/__pycache__",
+    "/src/**/__pycache__",
+    "/src/**/.pytest_cache",
+    "/.git",
+    "/.venv",
+    "/venv",
+]
+
+# Development tools configuration
+[tool.black]
+line-length = 88
+target-version = ['py310']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 88
+known_first_party = ["tts_notify", "core", "ui", "utils"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+
+[[tool.mypy.overrides]]
+module = [
+    "mcp.*",
+    "fastapi.*",
+    "uvicorn.*",
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-ra -q --strict-markers --strict-config"
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+]
+
+[tool.coverage.run]
+source = ["src"]
+omit = [
+    "*/tests/*",
+    "*/test_*",
+    "*/__pycache__/*",
+    "*/venv/*",
+    "*/.venv/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "if settings.DEBUG",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if 0:",
+    "if __name__ == .__main__.:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
 ]

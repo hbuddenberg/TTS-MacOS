@@ -8,6 +8,7 @@ for different MCP clients (Claude Desktop, Continue.dev, Cline, etc.)
 
 import json
 import logging
+import os
 import subprocess
 import sys
 import threading
@@ -25,6 +26,9 @@ class EnhancedTTSNotifyMCPServer:
         self.debug = debug
         self.initialized = False
         self.request_count = 0
+
+        # Log environment variables at startup
+        self.log_environment_variables()
 
         # Enhanced tool schemas for better compatibility
         self.tools = {
@@ -103,6 +107,21 @@ class EnhancedTTSNotifyMCPServer:
             logger.setLevel(logging.DEBUG)
             print("🐛 Enhanced MCP Server started in DEBUG mode")
 
+    def log_environment_variables(self):
+        """Log TTS_NOTIFY environment variables"""
+        tts_vars = {k: v for k, v in os.environ.items() if k.startswith('TTS_NOTIFY_')}
+
+        if tts_vars:
+            logger.info(f"🌍 Environment variables detected: {len(tts_vars)}")
+            for var, value in tts_vars.items():
+                logger.info(f"   {var}: {value}")
+            if self.debug:
+                print(f"🐛 Environment variables: {tts_vars}")
+        else:
+            logger.info("🌍 No TTS_NOTIFY environment variables detected")
+            if self.debug:
+                print("🐛 No TTS_NOTIFY environment variables found")
+
     def log_debug(self, message: str):
         """Debug logging helper"""
         if self.debug:
@@ -112,12 +131,22 @@ class EnhancedTTSNotifyMCPServer:
     def speak_text(self, text: str, voice: Optional[str] = None, rate: Optional[int] = None) -> str:
         """Speak text using macOS TTS"""
         try:
-            self.log_debug(f"Speaking text: '{text[:50]}...' with voice: {voice or 'default'}")
+            # Get default voice from environment variable
+            default_voice = os.environ.get('TTS_NOTIFY_VOICE', 'monica')
+
+            # Use provided voice or fallback to environment, then system default
+            voice_to_use = voice or default_voice
+
+            self.log_debug(f"Speaking text: '{text[:50]}...' with voice: {voice_to_use}")
 
             cmd = ['say']
 
-            if voice and voice.strip():
-                cmd.extend(['-v', voice.strip()])
+            if voice_to_use and voice_to_use.strip():
+                cmd.extend(['-v', voice_to_use.strip()])
+
+            # Get default rate from environment variable
+            if rate is None:
+                rate = int(os.environ.get('TTS_NOTIFY_RATE', '175'))
 
             if rate and isinstance(rate, int):
                 # Validate rate range
@@ -131,7 +160,7 @@ class EnhancedTTSNotifyMCPServer:
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
 
             if result.returncode == 0:
-                voice_used = voice or "system default"
+                voice_used = voice_to_use
                 self.log_debug(f"TTS execution successful")
                 return f"✅ Text spoken successfully with voice: {voice_used}"
             else:
@@ -191,10 +220,17 @@ class EnhancedTTSNotifyMCPServer:
             if not output_path.lower().endswith('.aiff'):
                 output_path += '.aiff'
 
+            # Get defaults from environment variables
+            default_voice = os.environ.get('TTS_NOTIFY_VOICE', 'monica')
+            voice_to_use = voice or default_voice
+
+            if rate is None:
+                rate = int(os.environ.get('TTS_NOTIFY_RATE', '175'))
+
             cmd = ['say']
 
-            if voice and voice.strip():
-                cmd.extend(['-v', voice.strip()])
+            if voice_to_use and voice_to_use.strip():
+                cmd.extend(['-v', voice_to_use.strip()])
 
             if rate and isinstance(rate, int):
                 rate = max(100, min(300, rate))

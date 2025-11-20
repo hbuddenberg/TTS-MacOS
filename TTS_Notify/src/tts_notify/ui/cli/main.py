@@ -371,13 +371,12 @@ Para búsqueda flexible de voces:
                 # Fallback: assume it's installed as a module
                 mcp_server_path = "-m tts_notify.ui.mcp.server"
 
-            # Create MCP configuration
+            # Create MCP configuration - use the orchestrator with mode mcp
             mcp_config = {
                 "mcpServers": {
                     "tts-notify": {
                         "command": python_exe,
-                        "args": [mcp_server_path] if isinstance(mcp_server_path, str) else mcp_server_path,
-                        "env": {}
+                        "args": ["-m", "tts_notify", "--mode", "mcp"]
                     }
                 }
             }

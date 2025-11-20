@@ -379,8 +379,17 @@ class TTSNotifyMCPServer:
 
 async def main():
     """Main entry point for MCP server"""
-    server = TTSNotifyMCPServer()
-    await server.run()
+    try:
+        # Try to use the complex server first
+        server = TTSNotifyMCPServer()
+        await server.run()
+    except Exception as e:
+        print(f"⚠️  Complex MCP server failed: {e}")
+        print("🔄 Falling back to simple MCP server...")
+
+        # Fallback to simple server
+        from .simple_server import main as simple_main
+        await simple_main()
 
 
 if __name__ == "__main__":

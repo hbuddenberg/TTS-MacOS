@@ -252,9 +252,34 @@ installers/install.bat [mode]
 installers/install.ps1 -Mode [mode]
 
 # Specific installers
-./installers/install-cli.sh  # CLI only
-./installers/install-mcp.sh   # MCP only
+./installers/install-cli.sh           # CLI only
+./installers/install-mcp.sh            # MCP dual-mode (Claude Code + Desktop)
+./installers/install-mcp-claude-code.sh # Claude Code specialized installer
 ```
+
+### 🚀 **NEW: Claude Code Global Installation**
+The installer now supports **automatic global configuration** for Claude Code:
+
+```bash
+# Automatic detection and configuration
+./installers/install-mcp.sh
+
+# Specialized Claude Code installer (recommended)
+./installers/install-mcp-claude-code.sh
+
+# Interactive mode with voice selection
+./installers/install-mcp-claude-code.sh --interactive
+
+# Non-interactive mode
+./installers/install-mcp-claude-code.sh --non-interactive --voice "Siri Female (Spanish Spain)" --rate 175
+```
+
+**Features:**
+- ✅ **Global Configuration**: Available in ALL Claude Code projects automatically
+- ✅ **11 Environment Variables**: Complete configuration with all recommended settings
+- ✅ **Smart Detection**: Automatically detects Claude Code and optimal paths
+- ✅ **Fallback Support**: Maintains Claude Desktop compatibility
+- ✅ **Interactive Setup**: Choose voice, rate, and options during installation
 
 ## 📊 Performance
 

@@ -131,21 +131,32 @@ TTS_Notify/
 
 ### Environment Variables
 ```bash
-# Voice Settings
-TTS_NOTIFY_VOICE=monica          # Default voice
-TTS_NOTIFY_RATE=175              # Speech rate (WPM)
-TTS_NOTIFY_LANGUAGE=es           # Language
-TTS_NOTIFY_QUALITY=enhanced      # Voice quality
+# Voice Settings (Core)
+TTS_NOTIFY_VOICE=monica                    # Default voice
+TTS_NOTIFY_RATE=175                        # Speech rate (WPM)
+TTS_NOTIFY_LANGUAGE=es                     # Language
+TTS_NOTIFY_QUALITY=enhanced                # Voice quality
+
+# Voice Settings (Advanced)
+TTS_NOTIFY_PITCH=1.0                       # Voice pitch (0.5-2.0)
+TTS_NOTIFY_VOLUME=1.0                      # Voice volume (0.0-1.0)
 
 # Functionality
-TTS_NOTIFY_ENABLED=true          # Enable TTS
-TTS_NOTIFY_CACHE_ENABLED=true    # Enable voice caching
-TTS_NOTIFY_LOG_LEVEL=INFO        # Logging level
+TTS_NOTIFY_ENABLED=true                    # Enable TTS
+TTS_NOTIFY_CACHE_ENABLED=true              # Enable voice caching
+TTS_NOTIFY_LOG_LEVEL=INFO                  # Logging level
+
+# Performance & Limits
+TTS_NOTIFY_MAX_TEXT_LENGTH=5000            # Maximum text length
+TTS_NOTIFY_OUTPUT_FORMAT=aiff              # Audio format
 
 # API Server
-TTS_NOTIFY_API_PORT=8000         # API server port
-TTS_NOTIFY_API_HOST=localhost    # API server host
+TTS_NOTIFY_API_PORT=8000                   # API server port
+TTS_NOTIFY_API_HOST=localhost              # API server host
 ```
+
+**🚀 Auto-Configured Variables:**
+The new MCP installers automatically configure **all 11 environment variables** with optimal defaults for Claude Code integration.
 
 ### Configuration Profiles
 ```bash
@@ -215,6 +226,7 @@ pytest --cov=src
 - **[CHANGELOG-v2.md](CHANGELOG-v2.md)** - Version history and changes
 - **[MIGRATION-GUIDE-v2.md](MIGRATION-GUIDE-v2.md)** - Migration from v1.5.0
 - **[CLAUDE.md](CLAUDE.md)** - Development guide for Claude Code
+- **[configuracion-global-mcp-tts-notify.md](configuracion-global-mcp-tts-notify.md)** - Global MCP configuration guide
 
 ## 🔧 Installation Scripts
 
@@ -228,9 +240,34 @@ installers/install.bat [mode]
 installers/install.ps1 -Mode [mode]
 
 # Specific installers
-./installers/install-cli.sh  # CLI only
-./installers/install-mcp.sh   # MCP only
+./installers/install-cli.sh           # CLI only
+./installers/install-mcp.sh            # MCP dual-mode (Claude Code + Desktop)
+./installers/install-mcp-claude-code.sh # Claude Code specialized installer
 ```
+
+### 🚀 **NEW: Claude Code Global Installation**
+The installer now supports **automatic global configuration** for Claude Code:
+
+```bash
+# Automatic detection and configuration
+./installers/install-mcp.sh
+
+# Specialized Claude Code installer (recommended)
+./installers/install-mcp-claude-code.sh
+
+# Interactive mode with voice selection
+./installers/install-mcp-claude-code.sh --interactive
+
+# Non-interactive mode
+./installers/install-mcp-claude-code.sh --non-interactive --voice "Siri Female (Spanish Spain)" --rate 175
+```
+
+**Features:**
+- ✅ **Global Configuration**: Available in ALL Claude Code projects automatically
+- ✅ **11 Environment Variables**: Complete configuration with all recommended settings
+- ✅ **Smart Detection**: Automatically detects Claude Code and optimal paths
+- ✅ **Fallback Support**: Maintains Claude Desktop compatibility
+- ✅ **Interactive Setup**: Choose voice, rate, and options during installation
 
 ## 📊 Performance
 

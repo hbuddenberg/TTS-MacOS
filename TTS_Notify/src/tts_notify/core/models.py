@@ -50,6 +50,12 @@ class AudioFormat(Enum):
     FLAC = "flac"
 
 
+class TTSEngineType(Enum):
+    """TTS Engine types"""
+    MACOS = "macos"
+    COQUI = "coqui"
+
+
 @dataclass
 class Voice:
     """Voice information model"""
@@ -127,6 +133,11 @@ class TTSRequest:
     volume: Optional[float] = None  # Volume multiplier (0.0-1.0)
     output_format: AudioFormat = AudioFormat.AIFF
     output_path: Optional[Path] = None
+    engine_type: Optional[TTSEngineType] = None  # TTS engine type
+    language: Optional[str] = None  # Language override (auto, en, es, fr, etc.)
+    force_language: bool = False  # Force specific language
+    model_name: Optional[str] = None  # CoquiTTS model name
+    auto_download: Optional[bool] = None  # Auto-download models
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):

@@ -15,9 +15,9 @@ from typing import Optional
 # Import from the new modular architecture
 from ...core.config_manager import config_manager
 from ...core.voice_system import VoiceManager, VoiceFilter
-from ...core.tts_engine import MacOSTTSEngine
-from ...core.models import TTSRequest, AudioFormat
-from ...core.exceptions import TTSNotifyError, VoiceNotFoundError, ValidationError, TTSError
+from ...core.tts_engine import engine_registry, bootstrap_engines
+from ...core.models import TTSRequest, AudioFormat, TTSEngineType, Voice
+from ...core.exceptions import TTSNotifyError, VoiceNotFoundError, ValidationError, TTSError, EngineNotAvailableError
 from ...utils.logger import setup_logging, get_logger
 
 
@@ -27,8 +27,17 @@ class TTSNotifyCLI:
     def __init__(self):
         self.config_manager = config_manager
         self.voice_manager = VoiceManager()
-        self.tts_engine = MacOSTTSEngine()
         self.logger = None
+        self._engines_initialized = False
+
+    async def initialize_engines(self):
+        """Initialize TTS engines based on configuration"""
+        if not self._engines_initialized:
+            config = self.config_manager.get_config()
+            await bootstrap_engines(config)
+            self._engines_initialized = True
+            if self.logger:
+                self.logger.info("TTS engines initialized successfully")
 
     def setup_logging(self):
         """Setup logging based on configuration"""
@@ -45,10 +54,15 @@ class TTSNotifyCLI:
             description="TTS Notify v2 - Sistema de notificaciones Text-to-Speech para macOS",
             formatter_class=argparse.RawDescriptionHelpFormatter,
             epilog="""
-Ejemplos:
+Ejemplos (v2.0.0 + v3.0.0 CoquiTTS):
   tts-notify "Hola mundo"
   tts-notify "Hola mundo" --voice monica --rate 200
+  tts-notify "Hello world" --engine coqui --language en
+  tts-notify "Bonjour le monde" --engine coqui --model xtts_v2 --language fr
   tts-notify --list
+  tts-notify --list-languages              # Listar idiomas CoquiTTS
+  tts-notify --download-language fr        # Descargar idioma francés
+  tts-notify --model-status                # Estado de modelos CoquiTTS
   tts-notify --list --compact
   tts-notify --list --gen female
   tts-notify --list --lang es_ES
@@ -59,6 +73,10 @@ Para búsqueda flexible de voces:
   tts-notify "Test" --voice angelica     # Encuentra Angélica
   tts-notify "Test" --voice "jorge enhanced"  # Variante Enhanced
   tts-notify "Test" --voice siri         # Siri si está instalada
+
+CoquiTTS (v3.0.0+):
+  tts-notify "Hello" --engine coqui --voice Daniel --language en
+  tts-notify "Hola" --engine coqui --language es --force-language
             """
         )
 
@@ -90,6 +108,45 @@ Para búsqueda flexible de voces:
             help="Volumen (0.0-1.0, donde 1.0 es máximo)"
         )
 
+        # Engine selection (v3.0.0+)
+        parser.add_argument(
+            "--engine", "-e",
+            choices=["macos", "coqui"],
+            help="Motor TTS a utilizar (default: configurado en TTS_NOTIFY_ENGINE)"
+        )
+        parser.add_argument(
+            "--model", "-m",
+            help="Modelo CoquiTTS específico (default: xtts_v2)"
+        )
+        parser.add_argument(
+            "--language", "-L",
+            choices=["auto", "en", "es", "fr", "de", "it", "pt", "nl", "pl", "ru", "zh", "ja", "ko"],
+            help="Idioma para CoquiTTS (auto=detección automática)"
+        )
+        parser.add_argument(
+            "--force-language",
+            action="store_true",
+            help="Forzar idioma específico ignorando detección automática"
+        )
+
+        # CoquiTTS management commands (v3.0.0+)
+        parser.add_argument(
+            "--list-languages",
+            action="store_true",
+            help="Listar idiomas disponibles en CoquiTTS"
+        )
+        parser.add_argument(
+            "--download-language",
+            metavar="LANG",
+            choices=["en", "es", "fr", "de", "it", "pt", "nl", "pl", "ru", "zh", "ja", "ko"],
+            help="Descargar modelo para idioma específico de CoquiTTS"
+        )
+        parser.add_argument(
+            "--model-status",
+            action="store_true",
+            help="Mostrar estado de los modelos CoquiTTS"
+        )
+
         # Listing options
         parser.add_argument(
             "--list", "-l",
@@ -107,7 +164,7 @@ Para búsqueda flexible de voces:
             help="Filtrar voces por género"
         )
         parser.add_argument(
-            "--lang", "--language",
+            "--lang",
             help="Filtrar voces por idioma (ej: es, en, es_ES, es_MX)"
         )
 
@@ -150,15 +207,23 @@ Para búsqueda flexible de voces:
         parser.add_argument(
             "--version",
             action="version",
-            version="%(prog)s 2.0.0"
+            version="%(prog)s 3.0.0 (Phase A - CoquiTTS Integration)"
         )
 
         return parser
 
     async def list_voices(self, compact: bool = False, gender: Optional[str] = None,
-                         language: Optional[str] = None) -> None:
+                         language: Optional[str] = None, engine: Optional[str] = None) -> None:
         """List available voices with optional filtering"""
         try:
+            # Initialize engines first
+            await self.initialize_engines()
+
+            if engine == "coqui":
+                # For CoquiTTS, list available speakers for the current model
+                await self._list_coqui_voices()
+                return
+
             voices = await self.voice_manager.get_all_voices()
 
             # Apply filters
@@ -233,42 +298,173 @@ Para búsqueda flexible de voces:
 
         print(f"\nTotal: {len(voices)} voces disponibles")
 
+    async def _list_coqui_voices(self) -> None:
+        """List CoquiTTS available voices/speakers"""
+        try:
+            coqui_engine = engine_registry.get("coqui")
+            if coqui_engine:
+                voices = await coqui_engine.get_supported_voices()
+
+                print("\n🤖 VOCES COQUITTS:")
+                print("=" * 40)
+
+                if voices:
+                    for voice in sorted(voices, key=lambda v: v.name):
+                        gender_symbol = "♂" if voice.gender and voice.gender.value == "male" else "♀"
+                        lang = voice.language.value if voice.language else "unknown"
+                        quality = voice.quality.value if voice.quality else "basic"
+                        print(f"  {gender_symbol} {voice.name} ({lang}, {quality})")
+                        if voice.description:
+                            print(f"      {voice.description}")
+                    print(f"\nTotal: {len(voices)} voces CoquiTTS")
+                else:
+                    print("  No se encontraron voces CoquiTTS disponibles")
+                    print("  Ejecute: tts-notify --model-status para verificar el estado")
+            else:
+                print("❌ Motor CoquiTTS no disponible")
+                print("   Instale con: pip install coqui-tts o configure TTS_NOTIFY_ENGINE=coqui")
+
+        except EngineNotAvailableError:
+            print("❌ Motor CoquiTTS no disponible")
+            print("   Instale con: pip install coqui-tts")
+        except Exception as e:
+            print(f"❌ Error listando voces CoquiTTS: {e}")
+
+    async def list_languages(self) -> None:
+        """List available CoquiTTS languages"""
+        try:
+            coqui_engine = engine_registry.get("coqui")
+            if coqui_engine and hasattr(coqui_engine, 'multi_language_models'):
+                print("\n🌍 IDIOMAS DISPONIBLES EN COQUITTS:")
+                print("=" * 50)
+
+                current_model = coqui_engine.model_name
+                model_info = coqui_engine.multi_language_models.get(current_model)
+
+                if model_info:
+                    print(f"\nModelo actual: {current_model}")
+                    print(f"Idiomas soportados: {len(model_info.languages)}")
+                    print(f"Calidad: {model_info.quality}")
+                    print(f"Locutores: {model_info.speakers}")
+                    print(f"Tamaño: ~{model_info.size_gb}GB")
+
+                    print(f"\n📋 Idiomas disponibles:")
+                    for i, lang in enumerate(model_info.languages, 1):
+                        lang_names = {
+                            "en": "Inglés", "es": "Español", "fr": "Francés",
+                            "de": "Alemán", "it": "Italiano", "pt": "Portugués",
+                            "nl": "Neerlandés", "pl": "Polaco", "ru": "Ruso",
+                            "zh": "Chino", "ja": "Japonés", "ko": "Coreano"
+                        }
+                        lang_name = lang_names.get(lang, lang.upper())
+                        print(f"  {i:2d}. {lang} ({lang_name})")
+                else:
+                    print("❌ Información del modelo no disponible")
+            else:
+                print("❌ Motor CoquiTTS no disponible o no soporta multi-idioma")
+
+        except Exception as e:
+            print(f"❌ Error listando idiomas: {e}")
+
+    async def download_language(self, language: str) -> None:
+        """Download CoquiTTS language model"""
+        try:
+            print(f"📥 Descargando idioma '{language}' para CoquiTTS...")
+
+            coqui_engine = engine_registry.get("coqui")
+            if coqui_engine and hasattr(coqui_engine, 'ensure_language_available'):
+                success = await coqui_engine.ensure_language_available(language)
+
+                if success:
+                    print(f"✅ Idioma '{language}' descargado y disponible")
+                else:
+                    print(f"❌ Error descargando idioma '{language}'")
+                    print("   Verifique su conexión a internet y espacio en disco")
+            else:
+                print("❌ Motor CoquiTTS no disponible")
+
+        except Exception as e:
+            print(f"❌ Error descargando idioma: {e}")
+
+    async def show_model_status(self) -> None:
+        """Show CoquiTTS model status"""
+        try:
+            config = self.config_manager.get_config()
+
+            print("\n🤖 ESTADO DE MODELOS COQUITTS:")
+            print("=" * 50)
+
+            # Check CoquiTTS availability
+            try:
+                coqui_engine = engine_registry.get("coqui")
+                if coqui_engine:
+                    current_model = coqui_engine.model_name
+                    model_info = coqui_engine.multi_language_models.get(current_model)
+
+                    print(f"✅ Motor CoquiTTS disponible")
+                    print(f"📍 Modelo actual: {current_model}")
+
+                    if model_info:
+                        print(f"📊 Estado del modelo:")
+                        print(f"   • Idiomas: {len(model_info.languages)}")
+                        print(f"   • Locutores: {model_info.speakers}")
+                        print(f"   • Calidad: {model_info.quality}")
+                        print(f"   • Tamaño: ~{model_info.size_gb}GB")
+                        print(f"   • GPU: {'Sí' if coqui_engine.use_gpu else 'No'}")
+
+                        # Check model download status
+                        if hasattr(coqui_engine, 'is_model_downloaded'):
+                            downloaded = coqui_engine.is_model_downloaded()
+                            print(f"   • Descargado: {'Sí' if downloaded else 'No'}")
+                    else:
+                        print("⚠️  Información del modelo no disponible")
+                else:
+                    print("❌ Motor CoquiTTS no registrado")
+
+            except EngineNotAvailableError:
+                print("❌ Motor CoquiTTS no disponible")
+
+            # Configuration
+            print(f"\n⚙️  Configuración:")
+            print(f"   • Motor por defecto: {config.TTS_NOTIFY_ENGINE}")
+            print(f"   • Auto-descargar modelos: {config.TTS_NOTIFY_AUTO_DOWNLOAD_MODELS}")
+            print(f"   • Modo offline: {config.TTS_NOTIFY_COQUI_OFFLINE_MODE}")
+            print(f"   • Usar GPU: {config.TTS_NOTIFY_COQUI_USE_GPU}")
+            print(f"   • Cache modelos: {config.TTS_NOTIFY_COQUI_CACHE_MODELS}")
+
+            # Installation suggestion
+            if not engine_registry.get("coqui"):
+                print(f"\n💡 Instalación:")
+                print(f"   pip install coqui-tts torchaudio soundfile")
+                print(f"   O bien:")
+                print(f"   pip install -e .[coqui]")
+
+        except Exception as e:
+            print(f"❌ Error obteniendo estado de modelos: {e}")
+
     async def speak_text(self, text: str, voice: Optional[str] = None,
                         rate: Optional[int] = None, pitch: Optional[float] = None,
-                        volume: Optional[float] = None) -> None:
-        """Speak text using TTS engine"""
+                        volume: Optional[float] = None, engine: Optional[str] = None,
+                        model: Optional[str] = None, language: Optional[str] = None,
+                        force_language: bool = False) -> None:
+        """Speak text using TTS engine (v3.0.0 with CoquiTTS support)"""
         try:
+            # Initialize engines first
+            await self.initialize_engines()
+
             # Get configuration
             config = self.config_manager.get_config()
 
-            # Simple TTS execution using macOS say command directly
-            import subprocess
+            # Determine engine to use
+            engine_name = engine or config.TTS_NOTIFY_ENGINE
 
-            voice_to_use = voice or getattr(config, 'TTS_NOTIFY_VOICE', 'monica')
-            rate_to_use = str(rate or getattr(config, 'TTS_NOTIFY_RATE', 175))
-            pitch_to_use = str(pitch or getattr(config, 'TTS_NOTIFY_PITCH', 1.0))
-
-            # Build say command
-            cmd = ['say', '-v', voice_to_use, '-r', rate_to_use]
-
-            # Only add pitch if different from 1.0
-            if pitch_to_use != '1.0':
-                cmd.extend(['-p', pitch_to_use])
-
-            cmd.append(text)
-
-            # Execute TTS
-            result = subprocess.run(cmd, capture_output=True, text=True)
-
-            if result.returncode == 0:
-                if self.logger:
-                    self.logger.info(f"Text spoken successfully: {text[:50]}...")
-                print(f"✅ Texto reproducido con voz: {voice_to_use}")
+            if engine_name == "coqui":
+                await self._speak_with_coqui(text, voice, rate, pitch, volume, model, language, force_language, config)
             else:
-                print(f"❌ Error: {result.stderr}")
-                sys.exit(1)
+                # Default to macOS engine
+                await self._speak_with_macos(text, voice, rate, pitch, volume, config)
 
-        except (VoiceNotFoundError, ValidationError, TTSError) as e:
+        except (VoiceNotFoundError, ValidationError, TTSError, EngineNotAvailableError) as e:
             print(f"Error: {e}")
             sys.exit(1)
         except Exception as e:
@@ -277,11 +473,131 @@ Para búsqueda flexible de voces:
                 self.logger.exception("Unexpected error in speak_text")
             sys.exit(1)
 
+    async def _speak_with_macos(self, text: str, voice: Optional[str] = None,
+                               rate: Optional[int] = None, pitch: Optional[float] = None,
+                               volume: Optional[float] = None, config=None) -> None:
+        """Speak text using macOS TTS engine"""
+        try:
+            # Get voice from voice manager
+            voice_name = voice or config.TTS_NOTIFY_VOICE
+            voice_obj = await self.voice_manager.find_voice(voice_name)
+            if not voice_obj:
+                voice_obj = await self.voice_manager.find_voice("monica")  # fallback
+
+            # Create TTS request
+            request = TTSRequest(
+                text=text,
+                voice=voice_obj,
+                rate=rate or config.TTS_NOTIFY_RATE,
+                pitch=pitch or config.TTS_NOTIFY_PITCH,
+                volume=volume or config.TTS_NOTIFY_VOLUME,
+                output_format=AudioFormat.AIFF
+            )
+
+            # Use engine registry
+            macos_engine = engine_registry.get("macos")
+            response = await macos_engine.speak(request)
+
+            if response.success:
+                if self.logger:
+                    self.logger.info(f"Text spoken successfully with macOS engine: {text[:50]}...")
+                engine_used = f"macOS ({voice_obj.name})"
+                print(f"✅ Texto reproducido con motor: {engine_used}")
+            else:
+                print(f"❌ Error: {response.error}")
+                sys.exit(1)
+
+        except Exception as e:
+            # Fallback to direct subprocess if engine fails
+            import subprocess
+            voice_to_use = voice or config.TTS_NOTIFY_VOICE
+            rate_to_use = str(rate or config.TTS_NOTIFY_RATE)
+
+            cmd = ['say', '-v', voice_to_use, '-r', rate_to_use]
+            cmd.append(text)
+
+            result = subprocess.run(cmd, capture_output=True, text=True)
+
+            if result.returncode == 0:
+                print(f"✅ Texto reproducido con voz: {voice_to_use} (fallback directo)")
+            else:
+                print(f"❌ Error: {result.stderr}")
+                sys.exit(1)
+
+    async def _speak_with_coqui(self, text: str, voice: Optional[str] = None,
+                              rate: Optional[int] = None, pitch: Optional[float] = None,
+                              volume: Optional[float] = None, model: Optional[str] = None,
+                              language: Optional[str] = None, force_language: bool = False,
+                              config=None) -> None:
+        """Speak text using CoquiTTS engine"""
+        try:
+            coqui_engine = engine_registry.get("coqui")
+            if not coqui_engine:
+                print("❌ Motor CoquiTTS no disponible. Instale con: pip install coqui-tts")
+                sys.exit(1)
+
+            # For CoquiTTS, we need to handle voice differently since it uses speaker names
+            # For now, we'll use the default voice from the engine
+            voices = await coqui_engine.get_supported_voices()
+            voice_obj = None
+
+            if voice:
+                # Try to find matching voice in CoquiTTS voices
+                for v in voices:
+                    if v.name.lower() == voice.lower() or v.id.lower() == voice.lower():
+                        voice_obj = v
+                        break
+
+            if not voice_obj and voices:
+                voice_obj = voices[0]  # Use first available voice
+
+            if not voice_obj:
+                print("❌ No hay voces CoquiTTS disponibles")
+                sys.exit(1)
+
+            # Create TTS request with CoquiTTS specific parameters
+            request = TTSRequest(
+                text=text,
+                voice=voice_obj,
+                rate=rate or config.TTS_NOTIFY_RATE,
+                pitch=pitch or config.TTS_NOTIFY_PITCH,
+                volume=volume or config.TTS_NOTIFY_VOLUME,
+                engine_type=TTSEngineType.COQUI,
+                language=language or config.TTS_NOTIFY_DEFAULT_LANGUAGE,
+                force_language=force_language,
+                model_name=model or config.TTS_NOTIFY_COQUI_MODEL,
+                auto_download=config.TTS_NOTIFY_AUTO_DOWNLOAD_MODELS,
+                output_format=AudioFormat.WAV  # CoquiTTS typically uses WAV
+            )
+
+            response = await coqui_engine.speak(request)
+
+            if response.success:
+                if self.logger:
+                    self.logger.info(f"Text spoken successfully with CoquiTTS: {text[:50]}...")
+                engine_used = f"CoquiTTS ({voice_obj.name})"
+                lang_used = language or "auto"
+                print(f"✅ Texto reproducido con motor: {engine_used} [idioma: {lang_used}]")
+            else:
+                print(f"❌ Error CoquiTTS: {response.error}")
+                sys.exit(1)
+
+        except Exception as e:
+            print(f"❌ Error con motor CoquiTTS: {e}")
+            if "No module named 'TTS'" in str(e):
+                print("   💡 Instale CoquiTTS: pip install coqui-tts torchaudio soundfile")
+            sys.exit(1)
+
     async def save_audio(self, text: str, filename: str, voice: Optional[str] = None,
                         rate: Optional[int] = None, pitch: Optional[float] = None,
-                        volume: Optional[float] = None, audio_format: str = "aiff") -> None:
-        """Save text as audio file"""
+                        volume: Optional[float] = None, audio_format: str = "aiff",
+                        engine: Optional[str] = None, model: Optional[str] = None,
+                        language: Optional[str] = None, force_language: bool = False) -> None:
+        """Save text as audio file (v3.0.0 with CoquiTTS support)"""
         try:
+            # Initialize engines first
+            await self.initialize_engines()
+
             # Get configuration
             config = self.config_manager.get_config()
 
@@ -294,33 +610,124 @@ Para búsqueda flexible de voces:
                 output_dir = Path(getattr(config, 'TTS_NOTIFY_OUTPUT_DIR', Path.home() / "Desktop"))
                 output_path = output_dir / output_path
 
-            # Create TTS request
-            request = TTSRequest(
-                text=text,
-                voice_name=voice or getattr(config, 'TTS_NOTIFY_VOICE', 'monica'),
-                rate=rate or getattr(config, 'TTS_NOTIFY_RATE', 175),
-                pitch=pitch or getattr(config, 'TTS_NOTIFY_PITCH', 1.0),
-                volume=volume or getattr(config, 'TTS_NOTIFY_VOLUME', 1.0),
-                language=getattr(config, 'TTS_NOTIFY_LANGUAGE', 'es'),
-                output_format=AudioFormat(audio_format),
-                output_path=str(output_path)
-            )
+            # Determine engine to use
+            engine_name = engine or config.TTS_NOTIFY_ENGINE
 
-            # Save audio
-            response = await self.tts_engine.synthesize(request)
+            if engine_name == "coqui":
+                await self._save_with_coqui(text, output_path, voice, rate, pitch, volume,
+                                         audio_format, model, language, force_language, config)
+            else:
+                await self._save_with_macos(text, output_path, voice, rate, pitch, volume,
+                                          audio_format, config)
 
-            print(f"✅ Audio guardado en: {output_path}")
-
-            if self.logger:
-                self.logger.info(f"Audio saved successfully: {output_path}")
-
-        except (VoiceNotFoundError, ValidationError, TTSError) as e:
+        except (VoiceNotFoundError, ValidationError, TTSError, EngineNotAvailableError) as e:
             print(f"Error: {e}")
             sys.exit(1)
         except Exception as e:
             print(f"Error inesperado: {e}")
             if self.logger:
                 self.logger.exception("Unexpected error in save_audio")
+            sys.exit(1)
+
+    async def _save_with_macos(self, text: str, output_path: Path, voice: Optional[str] = None,
+                              rate: Optional[int] = None, pitch: Optional[float] = None,
+                              volume: Optional[float] = None, audio_format: str = "aiff",
+                              config=None) -> None:
+        """Save audio using macOS TTS engine"""
+        try:
+            # Get voice from voice manager
+            voice_name = voice or config.TTS_NOTIFY_VOICE
+            voice_obj = await self.voice_manager.find_voice(voice_name)
+            if not voice_obj:
+                voice_obj = await self.voice_manager.find_voice("monica")  # fallback
+
+            # Create TTS request
+            request = TTSRequest(
+                text=text,
+                voice=voice_obj,
+                rate=rate or config.TTS_NOTIFY_RATE,
+                pitch=pitch or config.TTS_NOTIFY_PITCH,
+                volume=volume or config.TTS_NOTIFY_VOLUME,
+                output_format=AudioFormat(audio_format),
+                output_path=output_path
+            )
+
+            # Use engine registry
+            macos_engine = engine_registry.get("macos")
+            response = await macos_engine.save(request, output_path)
+
+            if response.success:
+                print(f"✅ Audio guardado en: {output_path} (macOS)")
+                if self.logger:
+                    self.logger.info(f"Audio saved with macOS engine: {output_path}")
+            else:
+                print(f"❌ Error: {response.error}")
+                sys.exit(1)
+
+        except Exception as e:
+            print(f"❌ Error guardando audio con macOS: {e}")
+            sys.exit(1)
+
+    async def _save_with_coqui(self, text: str, output_path: Path, voice: Optional[str] = None,
+                             rate: Optional[int] = None, pitch: Optional[float] = None,
+                             volume: Optional[float] = None, audio_format: str = "wav",
+                             model: Optional[str] = None, language: Optional[str] = None,
+                             force_language: bool = False, config=None) -> None:
+        """Save audio using CoquiTTS engine"""
+        try:
+            coqui_engine = engine_registry.get("coqui")
+            if not coqui_engine:
+                print("❌ Motor CoquiTTS no disponible. Instale con: pip install coqui-tts")
+                sys.exit(1)
+
+            # Get CoquiTTS voice (similar to _speak_with_coqui)
+            voices = await coqui_engine.get_supported_voices()
+            voice_obj = None
+
+            if voice:
+                for v in voices:
+                    if v.name.lower() == voice.lower() or v.id.lower() == voice.lower():
+                        voice_obj = v
+                        break
+
+            if not voice_obj and voices:
+                voice_obj = voices[0]
+
+            if not voice_obj:
+                print("❌ No hay voces CoquiTTS disponibles")
+                sys.exit(1)
+
+            # Create TTS request with CoquiTTS parameters
+            request = TTSRequest(
+                text=text,
+                voice=voice_obj,
+                rate=rate or config.TTS_NOTIFY_RATE,
+                pitch=pitch or config.TTS_NOTIFY_PITCH,
+                volume=volume or config.TTS_NOTIFY_VOLUME,
+                engine_type=TTSEngineType.COQUI,
+                language=language or config.TTS_NOTIFY_DEFAULT_LANGUAGE,
+                force_language=force_language,
+                model_name=model or config.TTS_NOTIFY_COQUI_MODEL,
+                auto_download=config.TTS_NOTIFY_AUTO_DOWNLOAD_MODELS,
+                output_format=AudioFormat(audio_format),
+                output_path=output_path
+            )
+
+            response = await coqui_engine.save(request, output_path)
+
+            if response.success:
+                lang_used = language or "auto"
+                print(f"✅ Audio guardado en: {output_path} (CoquiTTS [idioma: {lang_used}])")
+                if self.logger:
+                    self.logger.info(f"Audio saved with CoquiTTS engine: {output_path}")
+            else:
+                print(f"❌ Error CoquiTTS: {response.error}")
+                sys.exit(1)
+
+        except Exception as e:
+            print(f"❌ Error guardando audio con CoquiTTS: {e}")
+            if "No module named 'TTS'" in str(e):
+                print("   💡 Instale CoquiTTS: pip install coqui-tts torchaudio soundfile")
             sys.exit(1)
 
     def show_mcp_config(self) -> None:
@@ -406,7 +813,7 @@ Para búsqueda flexible de voces:
                 self.logger.error(f"Error generating MCP config: {e}")
 
     async def run(self, args: argparse.Namespace) -> None:
-        """Main CLI execution method"""
+        """Main CLI execution method (v3.0.0 with CoquiTTS support)"""
         # Load configuration profile if specified
         if args.profile:
             self.config_manager.reload_config(args.profile)
@@ -419,14 +826,31 @@ Para búsqueda flexible de voces:
             self.show_mcp_config()
             return
 
-        # Handle different commands
+        # Handle CoquiTTS management commands
+        if args.list_languages:
+            await self.list_languages()
+            return
+
+        if args.download_language:
+            await self.download_language(args.download_language)
+            return
+
+        if args.model_status:
+            await self.show_model_status()
+            return
+
+        # Handle voice listing with engine support
         if args.list:
             await self.list_voices(
                 compact=args.compact,
                 gender=args.gen,
-                language=args.lang
+                language=args.lang,
+                engine=args.engine
             )
-        elif args.save:
+            return
+
+        # Handle save command with CoquiTTS support
+        if args.save:
             if not args.text:
                 print("Error: Se requiere texto para guardar archivo de audio")
                 sys.exit(1)
@@ -437,19 +861,33 @@ Para búsqueda flexible de voces:
                 rate=args.rate,
                 pitch=args.pitch,
                 volume=args.volume,
-                audio_format=args.format
+                audio_format=args.format,
+                engine=args.engine,
+                model=args.model,
+                language=args.language,
+                force_language=args.force_language
             )
-        elif args.text:
+            return
+
+        # Handle speak command with CoquiTTS support
+        if args.text:
             await self.speak_text(
                 text=args.text,
                 voice=args.voice,
                 rate=args.rate,
                 pitch=args.pitch,
-                volume=args.volume
+                volume=args.volume,
+                engine=args.engine,
+                model=args.model,
+                language=args.language,
+                force_language=args.force_language
             )
-        else:
-            print("Error: Se requiere texto o la opción --list")
-            sys.exit(1)
+            return
+
+        # No valid command provided
+        print("Error: Se requiere texto o alguna de las opciones disponibles")
+        print("Use --help para ver todas las opciones disponibles")
+        sys.exit(1)
 
 
 async def main():

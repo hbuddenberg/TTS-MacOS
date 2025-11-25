@@ -4,12 +4,12 @@ build-backend = "hatchling.build"
 
 [project]
 name = "tts-notify"
-version = "2.0.0"
-description = "Modular Text-to-Speech notification system for macOS with CLI, MCP, and REST API interfaces"
+version = "3.0.0"
+description = "Modular Text-to-Speech notification system for macOS with CLI, MCP, REST API, and CoquiTTS AI-powered voices"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
-keywords = ["tts", "text-to-speech", "macos", "voice", "speech", "audio", "cli", "mcp", "api", "notifications", "claude-desktop"]
+keywords = ["tts", "text-to-speech", "macos", "voice", "speech", "audio", "cli", "mcp", "api", "notifications", "claude-desktop", "coqui-tts", "ai-voices", "multi-language"]
 authors = [
     { name = "TTS Notify Project" }
 ]
@@ -59,8 +59,47 @@ api = [
     "python-multipart>=0.0.6",
 ]
 
+# CoquiTTS AI-powered TTS engine (NEW in v3.0.0)
+coqui = [
+    "coqui-tts>=0.27.0",
+    "torchaudio>=2.0.0",
+    "soundfile>=0.12.0",
+]
+
+# CoquiTTS with GPU acceleration
+coqui-gpu = [
+    "coqui-tts[gpu]>=0.27.0",
+    "torchaudio>=2.0.0",
+    "soundfile>=0.12.0",
+]
+
+# Multi-language support for CoquiTTS
+coqui-langs = [
+    "coqui-tts>=0.27.0",
+    "torchaudio>=2.0.0",
+    "soundfile>=0.12.0",
+]
+
 # Development mode
 dev = [
+    "mcp>=1.0.0",
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    "python-multipart>=0.0.6",
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.0.0",
+    "black>=23.0.0",
+    "isort>=5.12.0",
+    "flake8>=6.0.0",
+    "mypy>=1.0.0",
+]
+
+# Development with CoquiTTS support
+dev-coqui = [
+    "coqui>=0.27.0",
+    "torchaudio>=2.0.0",
+    "soundfile>=0.12.0",
     "mcp>=1.0.0",
     "fastapi>=0.104.0",
     "uvicorn[standard]>=0.24.0",
@@ -80,6 +119,9 @@ all = [
     "fastapi>=0.104.0",
     "uvicorn[standard]>=0.24.0",
     "python-multipart>=0.0.6",
+    "coqui-tts>=0.27.0",
+    "torchaudio>=2.0.0",
+    "soundfile>=0.12.0",
 ]
 
 [project.urls]

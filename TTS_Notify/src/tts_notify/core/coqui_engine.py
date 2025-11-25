@@ -31,10 +31,13 @@ except ImportError:
 
 from .models import (
     TTSRequest, TTSResponse, Voice, AudioFormat, Language,
-    Gender, VoiceQuality, TTSEngineType
+    Gender, VoiceQuality, TTSEngineType,
+    VoiceCloningRequest, VoiceCloningResponse, VoiceProfile
 )
 from .exceptions import TTSError, EngineNotAvailableError, ValidationError
 from .config_manager import ConfigManager
+from .voice_cloner import VoiceCloner, voice_cloner
+from .audio_pipeline import AudioProcessor, audio_processor
 
 logger = logging.getLogger(__name__)
 
@@ -653,6 +656,87 @@ class CoquiTTSEngine:
             logger.error(f"Failed to synthesize audio: {str(e)}")
             raise TTSError(f"Audio synthesis failed: {str(e)}")
 
+    # Phase C: Audio Pipeline Integration
+
+    async def process_audio_pipeline(self, audio_data: bytes, source_format: AudioFormat,
+                                   target_format: AudioFormat, language: Optional[str] = None,
+                                   quality_level: Optional[str] = None) -> Tuple[bytes, Dict[str, Any]]:
+        """
+        Process audio through the advanced audio pipeline
+        """
+        try:
+            config = self.config_manager.get_config()
+
+            # Check if pipeline processing is enabled
+            if not config.TTS_NOTIFY_COQUI_CONVERSION_ENABLED:
+                # If disabled, only do basic format conversion if needed
+                if source_format != target_format:
+                    return await audio_processor._convert_format(audio_data, source_format, target_format), {}
+                return audio_data, {}
+
+            logger.info(f"Processing audio pipeline: {source_format.value} -> {target_format.value}")
+
+            # Process through audio pipeline
+            processed_audio, metrics = await audio_processor.process_audio(
+                audio_data=audio_data,
+                source_format=source_format,
+                target_format=target_format,
+                language=language,
+                quality_level=quality_level
+            )
+
+            # Convert metrics to serializable format
+            metrics_dict = {
+                "processing_time": metrics.processing_time,
+                "input_size_bytes": metrics.input_size_bytes,
+                "output_size_bytes": metrics.output_size_bytes,
+                "compression_ratio": metrics.compression_ratio,
+                "peak_level_dbfs": metrics.peak_level_dbfs,
+                "rms_level_dbfs": metrics.rms_level_dbfs,
+                "dynamic_range_db": metrics.dynamic_range_dbfs,
+                "spectral_centroid": metrics.spectral_centroid,
+                "zero_crossing_rate": metrics.zero_crossing_rate,
+                "stages_completed": [stage.value for stage in metrics.stages_completed],
+                "warnings": metrics.warnings,
+                "language": language,
+                "quality_level": quality_level
+            }
+
+            logger.info(f"Audio pipeline completed in {metrics.processing_time:.2f}s")
+            return processed_audio, metrics_dict
+
+        except Exception as e:
+            error_msg = f"Audio pipeline processing failed: {str(e)}"
+            logger.error(error_msg)
+            raise TTSError(error_msg)
+
+    async def get_pipeline_capabilities(self) -> Dict[str, Any]:
+        """Get audio pipeline processing capabilities"""
+        try:
+            capabilities = audio_processor.get_processing_capabilities()
+
+            # Add engine-specific information
+            config = self.config_manager.get_config()
+            capabilities.update({
+                "engine_name": self.name,
+                "engine_available": self.is_available(),
+                "engine_initialized": self._initialized,
+                "pipeline_enabled": config.TTS_NOTIFY_COQUI_CONVERSION_ENABLED,
+                "auto_clean_audio": config.TTS_NOTIFY_COQUI_AUTO_CLEAN_AUDIO,
+                "auto_trim_silence": config.TTS_NOTIFY_COQUI_AUTO_TRIM_SILENCE,
+                "noise_reduction": config.TTS_NOTIFY_COQUI_NOISE_REDUCTION,
+                "target_formats": config.TTS_NOTIFY_COQUI_TARGET_FORMATS.split(',') if config.TTS_NOTIFY_COQUI_TARGET_FORMATS else ["wav"],
+                "embedding_cache": config.TTS_NOTIFY_COQUI_EMBEDDING_CACHE,
+                "embedding_format": config.TTS_NOTIFY_COQUI_EMBEDDING_FORMAT,
+                "diarization": config.TTS_NOTIFY_COQUI_DIARIZATION
+            })
+
+            return capabilities
+
+        except Exception as e:
+            logger.error(f"Failed to get pipeline capabilities: {e}")
+            return {"error": str(e)}
+
     async def _save_to_file(self, request: TTSRequest, speaker: str, language: str) -> TTSResponse:
         """Save synthesized audio to file"""
         try:
@@ -688,6 +772,210 @@ class CoquiTTSEngine:
                 success=False,
                 error=f"Failed to save audio: {str(e)}"
             )
+
+      # Phase B: Voice Cloning Methods
+
+    async def clone_voice(self, request: VoiceCloningRequest) -> VoiceCloningResponse:
+        """
+        Clone a voice using the integrated voice cloning system
+        """
+        try:
+            # Check if cloning is enabled
+            config = self.config_manager.get_config()
+            if not config.TTS_NOTIFY_COQUI_ENABLE_CLONING:
+                return VoiceCloningResponse(
+                    success=False,
+                    error="Voice cloning is disabled. Set TTS_NOTIFY_COQUI_ENABLE_CLONING=true"
+                )
+
+            logger.info(f"Starting voice cloning in CoquiTTS: {request.voice_name}")
+
+            # Delegate to voice cloner
+            response = await voice_cloner.clone_voice(request)
+
+            if response.success and response.voice:
+                # Register the cloned voice with the engine
+                await self._register_cloned_voice(response.voice)
+
+            return response
+
+        except Exception as e:
+            error_msg = f"Voice cloning failed in CoquiTTS: {str(e)}"
+            logger.error(error_msg)
+            return VoiceCloningResponse(
+                success=False,
+                error=error_msg
+            )
+
+    async def _register_cloned_voice(self, voice: Voice) -> None:
+        """
+        Register a cloned voice with the engine
+        """
+        try:
+            # Add to internal voice cache
+            if not hasattr(self, '_cloned_voices'):
+                self._cloned_voices = []
+
+            self._cloned_voices.append(voice)
+            logger.info(f"Cloned voice registered: {voice.name} ({voice.id})")
+
+        except Exception as e:
+            logger.warning(f"Failed to register cloned voice {voice.name}: {e}")
+
+    async def get_cloned_voices(self) -> List[Voice]:
+        """
+        Get list of cloned voices
+        """
+        try:
+            # Get from voice cloner
+            return await voice_cloner.list_cloned_voices()
+
+        except Exception as e:
+            logger.error(f"Failed to get cloned voices: {e}")
+            return []
+
+    async def delete_cloned_voice(self, voice_id: str) -> bool:
+        """
+        Delete a cloned voice
+        """
+        try:
+            success = await voice_cloner.delete_cloned_voice(voice_id)
+
+            if success and hasattr(self, '_cloned_voices'):
+                # Remove from internal cache
+                self._cloned_voices = [
+                    v for v in self._cloned_voices
+                    if v.id != voice_id and not v.id.startswith(f"cloned_{voice_id}")
+                ]
+
+            return success
+
+        except Exception as e:
+            logger.error(f"Failed to delete cloned voice {voice_id}: {e}")
+            return False
+
+    async def get_cloning_status(self) -> Dict[str, Any]:
+        """
+        Get voice cloning system status
+        """
+        try:
+            # Get basic status from voice cloner
+            cloning_status = await voice_cloner.get_cloning_status()
+
+            # Add engine-specific information
+            cloning_status.update({
+                "engine_available": self.is_available(),
+                "engine_initialized": self._initialized,
+                "model_name": self.model_name,
+                "supports_cloning": True,
+                "engine_type": "coqui"
+            })
+
+            return cloning_status
+
+        except Exception as e:
+            logger.error(f"Failed to get cloning status: {e}")
+            return {"error": str(e)}
+
+    def is_model_downloaded(self) -> bool:
+        """
+        Check if the primary model is downloaded
+        """
+        return self._model_exists_locally(self.model_name)
+
+    async def get_supported_formats(self) -> List[AudioFormat]:
+        """Get supported audio formats"""
+        base_formats = self._supported_formats
+
+        # Add additional formats for cloned voices if available
+        if hasattr(self, '_cloned_voices') and self._cloned_voices:
+            # Cloned voices might support more formats
+            extended_formats = base_formats.copy()
+            if AudioFormat.MP3 not in extended_formats:
+                extended_formats.append(AudioFormat.MP3)
+            if AudioFormat.OGG not in extended_formats:
+                extended_formats.append(AudioFormat.OGG)
+            return extended_formats
+
+        return base_formats
+
+    async def speak_with_cloned_voice(self, request: TTSRequest, cloned_voice: Voice) -> TTSResponse:
+        """
+        Speak using a cloned voice with enhanced processing
+        """
+        try:
+            if not cloned_voice.is_cloned:
+                return await self.speak(request)
+
+            # Enhanced processing for cloned voices
+            logger.info(f"Using cloned voice: {cloned_voice.name}")
+
+            # Load voice profile if available
+            if hasattr(cloned_voice, 'profile_path') and cloned_voice.profile_path:
+                profile_path = Path(cloned_voice.profile_path)
+                if profile_path.exists():
+                    # Apply voice-specific optimizations
+                    request.metadata["cloned_voice"] = True
+                    request.metadata["voice_id"] = cloned_voice.id
+                    request.metadata["optimization_score"] = cloned_voice.optimization_score
+
+            # Generate speech with cloned voice
+            response = await self.speak(request)
+
+            if response.success:
+                response.metadata["cloned_voice_name"] = cloned_voice.name
+                response.metadata["cloned_voice_quality"] = cloned_voice.cloning_quality
+
+            return response
+
+        except Exception as e:
+            error_msg = f"Failed to speak with cloned voice {cloned_voice.name}: {str(e)}"
+            logger.error(error_msg)
+            return TTSResponse(success=False, error=error_msg)
+
+    async def validate_cloning_request(self, request: VoiceCloningRequest) -> List[str]:
+        """
+        Validate a voice cloning request
+        """
+        errors = []
+
+        try:
+            # Check if cloning is enabled
+            config = self.config_manager.get_config()
+            if not config.TTS_NOTIFY_COQUI_ENABLE_CLONING:
+                errors.append("Voice cloning is disabled")
+
+            # Validate source file
+            if not request.source_audio_path.exists():
+                errors.append(f"Source audio file not found: {request.source_audio_path}")
+
+            # Validate audio duration
+            try:
+                import librosa
+                duration = librosa.get_duration(filename=str(request.source_audio_path))
+                min_duration = config.TTS_NOTIFY_COQUI_MIN_SAMPLE_SECONDS
+                max_duration = config.TTS_NOTIFY_COQUI_MAX_SAMPLE_SECONDS
+
+                if duration < min_duration:
+                    errors.append(f"Audio too short: {duration:.2f}s (minimum: {min_duration}s)")
+                if duration > max_duration:
+                    errors.append(f"Audio too long: {duration:.2f}s (maximum: {max_duration}s)")
+            except Exception as e:
+                errors.append(f"Failed to analyze audio duration: {e}")
+
+            # Validate voice name
+            if not request.voice_name or len(request.voice_name.strip()) < 2:
+                errors.append("Voice name must be at least 2 characters long")
+
+            # Validate language support
+            model_info = self._get_model_info(self.model_name)
+            if model_info and request.language not in model_info.languages:
+                errors.append(f"Language '{request.language}' not supported by model {self.model_name}")
+
+        except Exception as e:
+            errors.append(f"Validation error: {e}")
+
+        return errors
 
     def __repr__(self) -> str:
         return f"CoquiTTSEngine(model='{self.model_name}', device='{self._device}', initialized={self._initialized})"

@@ -48,12 +48,19 @@ class TTSConfig(BaseModel):
     TTS_NOTIFY_COQUI_MODEL_TIMEOUT: int = Field(default=300, ge=60, le=1800, description="Model download timeout (seconds)")
     TTS_NOTIFY_COQUI_OFFLINE_MODE: bool = Field(default=False, description="Offline mode (no downloads)")
 
-    # Voice Cloning Configuration
+    # Voice Cloning Configuration (Phase B)
     TTS_NOTIFY_COQUI_ENABLE_CLONING: bool = Field(default=False, description="Enable voice cloning")
     TTS_NOTIFY_COQUI_PROFILE_DIR: Optional[str] = Field(default=None, description="Voice profile directory")
     TTS_NOTIFY_COQUI_EMBEDDING_DIR: Optional[str] = Field(default=None, description="Embedding directory")
     TTS_NOTIFY_COQUI_MIN_SAMPLE_SECONDS: float = Field(default=2.0, ge=1.0, le=30.0, description="Minimum sample length for cloning")
     TTS_NOTIFY_COQUI_MAX_SAMPLE_SECONDS: float = Field(default=15.0, ge=5.0, le=60.0, description="Maximum sample length for cloning")
+    TTS_NOTIFY_COQUI_CLONING_QUALITY: str = Field(default="high", pattern=r"^(low|medium|high|ultra)$", description="Voice cloning quality level")
+    TTS_NOTIFY_COQUI_CLONING_BATCH_SIZE: int = Field(default=1, ge=1, le=16, description="Batch size for cloning processing")
+    TTS_NOTIFY_COQUI_CLONING_DENOISE: bool = Field(default=True, description="Enable audio denoising for cloning")
+    TTS_NOTIFY_COQUI_CLONING_NORMALIZE: bool = Field(default=True, description="Enable audio normalization for cloning")
+    TTS_NOTIFY_COQUI_VOICE_NAME_TEMPLATE: str = Field(default="custom_voice_{lang}_{timestamp}", description="Template for custom voice names")
+    TTS_NOTIFY_COQUI_CLONING_TIMEOUT: int = Field(default=300, ge=60, le=1800, description="Voice cloning timeout in seconds")
+    TTS_NOTIFY_COQUI_AUTO_OPTIMIZE_CLONE: bool = Field(default=True, description="Automatically optimize cloned voice quality")
 
     # Audio Pipeline Configuration
     TTS_NOTIFY_COQUI_AUTO_CLEAN_AUDIO: bool = Field(default=True, description="Auto-clean audio for cloning")

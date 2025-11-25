@@ -80,6 +80,45 @@ coqui-langs = [
     "soundfile>=0.12.0",
 ]
 
+# Phase B: Voice Cloning support
+coqui-cloning = [
+    "coqui-tts>=0.27.0",
+    "torchaudio>=2.0.0",
+    "soundfile>=0.12.0",
+    "librosa>=0.10.0",
+    "numpy>=1.24.0",
+    "scipy>=1.10.0",
+]
+
+# Voice Cloning with GPU support
+coqui-cloning-gpu = [
+    "coqui-tts[gpu]>=0.27.0",
+    "torchaudio>=2.0.0",
+    "soundfile>=0.12.0",
+    "librosa>=0.10.0",
+    "numpy>=1.24.0",
+    "scipy>=1.10.0",
+]
+
+# Phase C: Audio Pipeline support
+audio-pipeline = [
+    "librosa>=0.10.0",
+    "soundfile>=0.12.0",
+    "numpy>=1.24.0",
+    "scipy>=1.10.0",
+    "ffmpeg-python>=0.2.0",
+]
+
+# Audio Pipeline with FFmpeg
+audio-pipeline-ffmpeg = [
+    "librosa>=0.10.0",
+    "soundfile>=0.12.0",
+    "numpy>=1.24.0",
+    "scipy>=1.10.0",
+    "ffmpeg-python>=0.2.0",
+    "pydub>=0.25.0",
+]
+
 # Development mode
 dev = [
     "mcp>=1.0.0",
@@ -97,9 +136,30 @@ dev = [
 
 # Development with CoquiTTS support
 dev-coqui = [
-    "coqui>=0.27.0",
+    "coqui-tts>=0.27.0",
     "torchaudio>=2.0.0",
     "soundfile>=0.12.0",
+    "mcp>=1.0.0",
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    "python-multipart>=0.0.6",
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.0.0",
+    "black>=23.0.0",
+    "isort>=5.12.0",
+    "flake8>=6.0.0",
+    "mypy>=1.0.0",
+]
+
+# Development with full CoquiTTS and Voice Cloning support
+dev-coqui-cloning = [
+    "coqui-tts>=0.27.0",
+    "torchaudio>=2.0.0",
+    "soundfile>=0.12.0",
+    "librosa>=0.10.0",
+    "numpy>=1.24.0",
+    "scipy>=1.10.0",
     "mcp>=1.0.0",
     "fastapi>=0.104.0",
     "uvicorn[standard]>=0.24.0",
@@ -122,6 +182,11 @@ all = [
     "coqui-tts>=0.27.0",
     "torchaudio>=2.0.0",
     "soundfile>=0.12.0",
+    "librosa>=0.10.0",
+    "numpy>=1.24.0",
+    "scipy>=1.10.0",
+    "ffmpeg-python>=0.2.0",
+    "pydub>=0.25.0",
 ]
 
 [project.urls]

@@ -16,7 +16,10 @@ from typing import Optional
 from ...core.config_manager import config_manager
 from ...core.voice_system import VoiceManager, VoiceFilter
 from ...core.tts_engine import engine_registry, bootstrap_engines
-from ...core.models import TTSRequest, AudioFormat, TTSEngineType, Voice
+from ...core.models import (
+    TTSRequest, AudioFormat, TTSEngineType, Voice,
+    VoiceCloningRequest, VoiceCloningResponse
+)
 from ...core.exceptions import TTSNotifyError, VoiceNotFoundError, ValidationError, TTSError, EngineNotAvailableError
 from ...utils.logger import setup_logging, get_logger
 
@@ -77,6 +80,19 @@ Para búsqueda flexible de voces:
 CoquiTTS (v3.0.0+):
   tts-notify "Hello" --engine coqui --voice Daniel --language en
   tts-notify "Hola" --engine coqui --language es --force-language
+
+Voice Cloning (Phase B):
+  tts-notify --clone-voice sample.wav --voice-name MiVoz --clone-language es
+  tts-notify --list-cloned                        # Listar voces clonadas
+  tts-notify --cloning-status                     # Estado del sistema
+  tts-notify --delete-clone VOICE_ID              # Eliminar voz clonada
+  tts-notify --enable-cloning                     # Activar clonación
+
+Audio Pipeline (Phase C):
+  tts-notify --pipeline-status                    # Estado del pipeline
+  tts-notify --process-audio input.wav --output-format mp3
+  tts-notify --process-audio input.wav --target-language es --audio-quality ultra
+  tts-notify --enable-pipeline                     # Activar pipeline
             """
         )
 
@@ -145,6 +161,93 @@ CoquiTTS (v3.0.0+):
             "--model-status",
             action="store_true",
             help="Mostrar estado de los modelos CoquiTTS"
+        )
+
+        # Phase B: Voice Cloning Commands
+        parser.add_argument(
+            "--clone-voice",
+            metavar="AUDIO_FILE",
+            help="Clonar voz desde archivo de audio (Ej: --clone-voice sample.wav --voice-name MiVoz)"
+        )
+        parser.add_argument(
+            "--voice-name",
+            metavar="NAME",
+            help="Nombre para la voz clonada (requerido con --clone-voice)"
+        )
+        parser.add_argument(
+            "--clone-language",
+            metavar="LANG",
+            choices=["en", "es", "fr", "de", "it", "pt", "nl", "pl", "ru", "zh", "ja", "ko"],
+            help="Idioma para clonación de voz"
+        )
+        parser.add_argument(
+            "--clone-quality",
+            choices=["low", "medium", "high", "ultra"],
+            default="high",
+            help="Calidad de clonación de voz (default: high)"
+        )
+        parser.add_argument(
+            "--list-cloned",
+            action="store_true",
+            help="Listar voces clonadas"
+        )
+        parser.add_argument(
+            "--delete-clone",
+            metavar="VOICE_ID",
+            help="Eliminar voz clonada específica"
+        )
+        parser.add_argument(
+            "--cloning-status",
+            action="store_true",
+            help="Mostrar estado del sistema de clonación de voz"
+        )
+        parser.add_argument(
+            "--enable-cloning",
+            action="store_true",
+            help="Activar sistema de clonación de voz"
+        )
+        parser.add_argument(
+            "--disable-cloning",
+            action="store_true",
+            help="Desactivar sistema de clonación de voz"
+        )
+
+        # Phase C: Audio Pipeline Commands
+        parser.add_argument(
+            "--pipeline-status",
+            action="store_true",
+            help="Mostrar estado del pipeline de audio"
+        )
+        parser.add_argument(
+            "--enable-pipeline",
+            action="store_true",
+            help="Activar pipeline de procesamiento de audio"
+        )
+        parser.add_argument(
+            "--disable-pipeline",
+            action="store_true",
+            help="Desactivar pipeline de procesamiento de audio"
+        )
+        parser.add_argument(
+            "--process-audio",
+            metavar="INPUT_FILE",
+            help="Procesar archivo de audio con pipeline avanzado"
+        )
+        parser.add_argument(
+            "--output-format",
+            choices=["wav", "mp3", "ogg", "flac", "aiff"],
+            help="Formato de salida para procesamiento de audio"
+        )
+        parser.add_argument(
+            "--audio-quality",
+            choices=["low", "medium", "high", "ultra"],
+            default="high",
+            help="Calidad de procesamiento de audio (default: high)"
+        )
+        parser.add_argument(
+            "--target-language",
+            choices=["en", "es", "fr", "de", "it", "pt", "nl", "pl", "ru", "zh", "ja", "ko"],
+            help="Idioma objetivo para optimización de audio"
         )
 
         # Listing options
@@ -441,6 +544,420 @@ CoquiTTS (v3.0.0+):
 
         except Exception as e:
             print(f"❌ Error obteniendo estado de modelos: {e}")
+
+    # Phase B: Voice Cloning Methods
+
+    async def clone_voice(self, audio_file: str, voice_name: str, language: Optional[str] = None,
+                         quality: str = "high") -> None:
+        """Clone a voice from audio file"""
+        try:
+            await self.initialize_engines()
+
+            config = self.config_manager.get_config()
+
+            # Check if CoquiTTS is available
+            coqui_engine = engine_registry.get("coqui")
+            if not coqui_engine:
+                print("❌ Motor CoquiTTS no disponible para clonación")
+                print("   Instale con: pip install coqui-tts")
+                sys.exit(1)
+
+            # Validate audio file
+            audio_path = Path(audio_file)
+            if not audio_path.exists():
+                print(f"❌ Archivo de audio no encontrado: {audio_file}")
+                sys.exit(1)
+
+            # Determine language
+            clone_language = language or config.TTS_NOTIFY_DEFAULT_LANGUAGE or "es"
+
+            print(f"🎭 Iniciando clonación de voz...")
+            print(f"   Archivo: {audio_path}")
+            print(f"   Nombre: {voice_name}")
+            print(f"   Idioma: {clone_language}")
+            print(f"   Calidad: {quality}")
+
+            # Create cloning request
+            cloning_request = VoiceCloningRequest(
+                source_audio_path=audio_path,
+                voice_name=voice_name,
+                language=clone_language,
+                quality=quality,
+                normalize=config.TTS_NOTIFY_COQUI_CLONING_NORMALIZE,
+                denoise=config.TTS_NOTIFY_COQUI_CLONING_DENOISE,
+                auto_optimize=config.TTS_NOTIFY_COQUI_AUTO_OPTIMIZE_CLONE,
+                batch_size=config.TTS_NOTIFY_COQUI_CLONING_BATCH_SIZE,
+                timeout=config.TTS_NOTIFY_COQUI_CLONING_TIMEOUT
+            )
+
+            # Validate request
+            if hasattr(coqui_engine, 'validate_cloning_request'):
+                errors = await coqui_engine.validate_cloning_request(cloning_request)
+                if errors:
+                    print("❌ Errores de validación:")
+                    for error in errors:
+                        print(f"   • {error}")
+                    sys.exit(1)
+
+            # Perform cloning
+            response = await coqui_engine.clone_voice(cloning_request)
+
+            if response.success:
+                print(f"✅ Voz clonada exitosamente:")
+                print(f"   🎤 Nombre: {response.voice.name}")
+                print(f"   🆔 ID: {response.voice.id}")
+                print(f"   🌍 Idioma: {response.voice.cloning_language}")
+                print(f"   ⭐ Calidad: {response.voice.cloning_quality}")
+                print(f"   📊 Duración muestra: {response.sample_duration:.2f}s")
+
+                if response.optimization_score:
+                    print(f"   🎯 Optimización: {response.optimization_score:.2f}")
+
+                if response.processing_time:
+                    print(f"   ⏱️  Tiempo procesamiento: {response.processing_time:.2f}s")
+
+                print(f"\n💡 Usa la voz clonada con:")
+                print(f"   tts-notify \"Hola mundo\" --engine coqui --voice \"{response.voice.name}\"")
+            else:
+                print(f"❌ Error en clonación: {response.error}")
+                if response.warnings:
+                    print("Advertencias:")
+                    for warning in response.warnings:
+                        print(f"   ⚠️  {warning}")
+                sys.exit(1)
+
+        except Exception as e:
+            print(f"❌ Error en clonación de voz: {e}")
+            sys.exit(1)
+
+    async def list_cloned_voices(self) -> None:
+        """List all cloned voices"""
+        try:
+            await self.initialize_engines()
+
+            coqui_engine = engine_registry.get("coqui")
+            if not coqui_engine:
+                print("❌ Motor CoquiTTS no disponible")
+                return
+
+            cloned_voices = await coqui_engine.get_cloned_voices()
+
+            print("\n🎭 VOCES CLONADAS:")
+            print("=" * 50)
+
+            if not cloned_voices:
+                print("   No hay voces clonadas disponibles")
+                print("\n💡 Clona una voz con:")
+                print("   tts-notify --clone-voice sample.wav --voice-name MiVoz --clone-language es")
+                return
+
+            for i, voice in enumerate(cloned_voices, 1):
+                created_at = voice.created_at or "Desconocido"
+                quality = voice.cloning_quality or "Desconocida"
+                language = voice.cloning_language or "Desconocido"
+                score = voice.optimization_score
+
+                print(f"\n{i:2d}. 🎤 {voice.name}")
+                print(f"     🆔 ID: {voice.id}")
+                print(f"     🌍 Idioma: {language}")
+                print(f"     ⭐ Calidad: {quality}")
+                print(f"     📅 Creada: {created_at}")
+
+                if score:
+                    score_percent = score * 100
+                    print(f"     🎯 Optimización: {score_percent:.1f}%")
+
+                if voice.cloning_source:
+                    source_file = Path(voice.cloning_source).name
+                    print(f"     📁 Fuente: {source_file}")
+
+            print(f"\nTotal: {len(cloned_voices)} voces clonadas")
+
+        except Exception as e:
+            print(f"❌ Error listando voces clonadas: {e}")
+
+    async def delete_cloned_voice(self, voice_id: str) -> None:
+        """Delete a cloned voice"""
+        try:
+            await self.initialize_engines()
+
+            coqui_engine = engine_registry.get("coqui")
+            if not coqui_engine:
+                print("❌ Motor CoquiTTS no disponible")
+                return
+
+            print(f"🗑️  Eliminando voz clonada: {voice_id}")
+
+            success = await coqui_engine.delete_cloned_voice(voice_id)
+
+            if success:
+                print(f"✅ Voz clonada eliminada exitosamente")
+            else:
+                print(f"❌ No se encontró la voz clonada: {voice_id}")
+                print("\n💡 Lista las voces disponibles con:")
+                print("   tts-notify --list-cloned")
+
+        except Exception as e:
+            print(f"❌ Error eliminando voz clonada: {e}")
+
+    async def show_cloning_status(self) -> None:
+        """Show voice cloning system status"""
+        try:
+            await self.initialize_engines()
+
+            coqui_engine = engine_registry.get("coqui")
+            config = self.config_manager.get_config()
+
+            print("\n🎭 ESTADO DEL SISTEMA DE CLONACIÓN DE VOZ:")
+            print("=" * 60)
+
+            # Basic configuration
+            print(f"\n⚙️  Configuración:")
+            print(f"   • Clonación habilitada: {config.TTS_NOTIFY_COQUI_ENABLE_CLONING}")
+            print(f"   • Calidad por defecto: {config.TTS_NOTIFY_COQUI_CLONING_QUALITY}")
+            print(f"   • Auto-optimización: {config.TTS_NOTIFY_COQUI_AUTO_OPTIMIZE_CLONE}")
+            print(f"   • Normalización: {config.TTS_NOTIFY_COQUI_CLONING_NORMALIZE}")
+            print(f"   • Reducción de ruido: {config.TTS_NOTIFY_COQUI_CLONING_DENOISE}")
+            print(f"   • Tamaño batch: {config.TTS_NOTIFY_COQUI_CLONING_BATCH_SIZE}")
+            print(f"   • Timeout: {config.TTS_NOTIFY_COQUI_CLONING_TIMEOUT}s")
+
+            # Engine status
+            if coqui_engine:
+                cloning_status = await coqui_engine.get_cloning_status()
+
+                print(f"\n🤖 Motor CoquiTTS:")
+                print(f"   • Disponible: ✅")
+                print(f"   • Inicializado: {cloning_status.get('engine_initialized', False)}")
+                print(f"   • Soporta clonación: {cloning_status.get('supports_cloning', False)}")
+
+                if 'profile_count' in cloning_status:
+                    print(f"\n📊 Estadísticas:")
+                    print(f"   • Voces clonadas: {cloning_status['profile_count']}")
+                    print(f"   • Embeddings: {cloning_status.get('embedding_count', 0)}")
+
+                if 'storage_usage' in cloning_status:
+                    storage = cloning_status['storage_usage']
+                    print(f"\n💾 Almacenamiento:")
+                    print(f"   • Perfiles: {storage.get('profiles_mb', 0):.1f} MB")
+                    print(f"   • Embeddings: {storage.get('embeddings_mb', 0):.1f} MB")
+                    print(f"   • Total: {storage.get('total_mb', 0):.1f} MB")
+
+                if 'directories' in cloning_status:
+                    dirs = cloning_status['directories']
+                    print(f"\n📁 Directorios:")
+                    print(f"   • Perfiles: {dirs.get('profiles', 'N/A')}")
+                    print(f"   • Embeddings: {dirs.get('embeddings', 'N/A')}")
+                    print(f"   • Temporal: {dirs.get('temp', 'N/A')}")
+            else:
+                print(f"\n🤖 Motor CoquiTTS:")
+                print(f"   • Disponible: ❌")
+                print(f"   • Instalación: pip install coqui-tts")
+
+            # Instructions
+            if not config.TTS_NOTIFY_COQUI_ENABLE_CLONING:
+                print(f"\n💡 Para habilitar la clonación:")
+                print(f"   export TTS_NOTIFY_COQUI_ENABLE_CLONING=true")
+                print(f"   O usa: tts-notify --enable-cloning")
+
+        except Exception as e:
+            print(f"❌ Error obteniendo estado de clonación: {e}")
+
+    async def toggle_cloning(self, enable: bool) -> None:
+        """Enable or disable voice cloning"""
+        try:
+            # This would require updating the configuration
+            # For now, we'll show instructions
+            action = "habilitar" if enable else "deshabilitar"
+            env_var = "TTS_NOTIFY_COQUI_ENABLE_CLONING"
+            value = "true" if enable else "false"
+
+            print(f"\n⚙️  Para {action} la clonación de voz:")
+            print(f"   export {env_var}={value}")
+            print(f"\nO añádelo a tu archivo ~/.bashrc o ~/.zshrc:")
+            print(f"   echo 'export {env_var}={value}' >> ~/.bashrc")
+
+            if enable:
+                print(f"\nReinicia tu terminal o ejecuta:")
+                print(f"   source ~/.bashrc")
+                print(f"\nLuego verifica el estado con:")
+                print(f"   tts-notify --cloning-status")
+
+        except Exception as e:
+            print(f"❌ Error configurando clonación: {e}")
+
+    # Phase C: Audio Pipeline Methods
+
+    async def process_audio_file(self, input_file: str, output_format: Optional[str] = None,
+                               target_language: Optional[str] = None,
+                               audio_quality: str = "high") -> None:
+        """Process audio file through the advanced pipeline"""
+        try:
+            await self.initialize_engines()
+
+            config = self.config_manager.get_config()
+
+            # Check if CoquiTTS is available
+            coqui_engine = engine_registry.get("coqui")
+            if not coqui_engine:
+                print("❌ Motor CoquiTTS no disponible para procesamiento de audio")
+                print("   Instale con: pip install coqui-tts librosa soundfile")
+                sys.exit(1)
+
+            # Validate input file
+            input_path = Path(input_file)
+            if not input_path.exists():
+                print(f"❌ Archivo de audio no encontrado: {input_file}")
+                sys.exit(1)
+
+            # Determine source and target formats
+            source_format = AudioFormat(input_path.suffix.lower().lstrip('.'))
+            target_format_enum = AudioFormat(output_format or source_format.value)
+
+            # Read input audio
+            print(f"🔧 Iniciando procesamiento de audio...")
+            print(f"   Entrada: {input_path}")
+            print(f"   Formato salida: {target_format_enum.value}")
+
+            if target_language:
+                print(f"   Idioma objetivo: {target_language}")
+            print(f"   Calidad: {audio_quality}")
+
+            input_data = input_path.read_bytes()
+
+            # Process through pipeline
+            processed_data, metrics = await coqui_engine.process_audio_pipeline(
+                audio_data=input_data,
+                source_format=source_format,
+                target_format=target_format_enum,
+                language=target_language,
+                quality_level=audio_quality
+            )
+
+            # Generate output filename
+            output_path = input_path.with_suffix(f".{target_format_enum.value}")
+
+            # Save processed audio
+            output_path.write_bytes(processed_data)
+
+            # Display results
+            print(f"\n✅ Audio procesado exitosamente:")
+            print(f"   📁 Salida: {output_path}")
+            print(f"   📊 Tamaño original: {metrics.get('input_size_bytes', 0):,} bytes")
+            print(f"   📊 Tamaño procesado: {metrics.get('output_size_bytes', 0):,} bytes")
+
+            if metrics.get('processing_time'):
+                print(f"   ⏱️  Tiempo procesamiento: {metrics['processing_time']:.2f}s")
+
+            if metrics.get('compression_ratio'):
+                print(f"   📈 Compresión: {metrics['compression_ratio']:.2f}x")
+
+            if metrics.get('peak_level_dbfs'):
+                print(f"   🔊 Nivel pico: {metrics['peak_level_dbfs']:.1f} dBFS")
+
+            if metrics.get('rms_level_dbfs'):
+                print(f"   🔊 Nivel RMS: {metrics['rms_level_dbfs']:.1f} dBFS")
+
+            stages = metrics.get('stages_completed', [])
+            if stages:
+                print(f"   🔄 Etapas completadas: {len(stages)}")
+
+            warnings = metrics.get('warnings', [])
+            if warnings:
+                print(f"   ⚠️  Advertencias: {len(warnings)}")
+                for warning in warnings[:3]:  # Show first 3 warnings
+                    print(f"      • {warning}")
+
+            print(f"\n💡 Para más opciones de procesamiento:")
+            print(f"   tts-notify --pipeline-status")
+
+        except Exception as e:
+            print(f"❌ Error procesando audio: {e}")
+            sys.exit(1)
+
+    async def show_pipeline_status(self) -> None:
+        """Show audio pipeline system status"""
+        try:
+            await self.initialize_engines()
+
+            coqui_engine = engine_registry.get("coqui")
+            config = self.config_manager.get_config()
+
+            print("\n🔧 ESTADO DEL PIPELINE DE AUDIO:")
+            print("=" * 50)
+
+            # Configuration
+            print(f"\n⚙️  Configuración:")
+            print(f"   • Pipeline habilitado: {config.TTS_NOTIFY_COQUI_CONVERSION_ENABLED}")
+            print(f"   • Limpieza automática: {config.TTS_NOTIFY_COQUI_AUTO_CLEAN_AUDIO}")
+            print(f"   • Recorte de silencios: {config.TTS_NOTIFY_COQUI_AUTO_TRIM_SILENCE}")
+            print(f"   • Reducción de ruido: {config.TTS_NOTIFY_COQUI_NOISE_REDUCTION}")
+            print(f"   • Diarización: {config.TTS_NOTIFY_COQUI_DIARIZATION}")
+            print(f"   • Formatos objetivo: {config.TTS_NOTIFY_COQUI_TARGET_FORMATS}")
+            print(f"   • Cache de embeddings: {config.TTS_NOTIFY_COQUI_EMBEDDING_CACHE}")
+            print(f"   • Formato embeddings: {config.TTS_NOTIFY_COQUI_EMBEDDING_FORMAT}")
+
+            # Engine capabilities
+            if coqui_engine:
+                try:
+                    capabilities = await coqui_engine.get_pipeline_capabilities()
+
+                    print(f"\n🤖 Capacidades del Motor:")
+                    print(f"   • Motor disponible: ✅")
+                    print(f"   • Procesamiento de audio: {'✅' if capabilities.get('audio_processing_available') else '❌'}")
+                    print(f"   • FFmpeg disponible: {'✅' if capabilities.get('ffmpeg_available') else '❌'}")
+                    print(f"   • Idiomas soportados: {len(capabilities.get('supported_languages', []))}")
+
+                    supported_formats = capabilities.get('supported_formats', [])
+                    if supported_formats:
+                        print(f"   • Formatos soportados: {', '.join(supported_formats)}")
+
+                    stages = capabilities.get('processing_stages', [])
+                    if stages:
+                        print(f"   • Etapas de procesamiento: {len(stages)}")
+
+                    temp_dir = capabilities.get('temp_directory')
+                    if temp_dir:
+                        print(f"   • Directorio temporal: {temp_dir}")
+
+                except Exception as e:
+                    print(f"\n🤖 Motor CoquiTTS:")
+                    print(f"   • Error obteniendo capacidades: {e}")
+            else:
+                print(f"\n🤖 Motor CoquiTTS:")
+                print(f"   • Disponible: ❌")
+                print(f"   • Instalación: pip install coqui-tts librosa soundfile")
+
+            # Instructions for enabling
+            if not config.TTS_NOTIFY_COQUI_CONVERSION_ENABLED:
+                print(f"\n💡 Para habilitar el pipeline de audio:")
+                print(f"   export TTS_NOTIFY_COQUI_CONVERSION_ENABLED=true")
+                print(f"   O usa: tts-notify --enable-pipeline")
+
+        except Exception as e:
+            print(f"❌ Error obteniendo estado del pipeline: {e}")
+
+    async def toggle_pipeline(self, enable: bool) -> None:
+        """Enable or disable audio pipeline"""
+        try:
+            action = "habilitar" if enable else "deshabilitar"
+            env_var = "TTS_NOTIFY_COQUI_CONVERSION_ENABLED"
+            value = "true" if enable else "false"
+
+            print(f"\n⚙️  Para {action} el pipeline de audio:")
+            print(f"   export {env_var}={value}")
+            print(f"\nO añádelo a tu archivo ~/.bashrc o ~/.zshrc:")
+            print(f"   echo 'export {env_var}={value}' >> ~/.bashrc")
+
+            if enable:
+                print(f"\nInstala las dependencias adicionales:")
+                print(f"   pip install librosa soundfile ffmpeg-python")
+                print(f"\nReinicia tu terminal o ejecuta:")
+                print(f"   source ~/.bashrc")
+                print(f"\nLuego verifica el estado con:")
+                print(f"   tts-notify --pipeline-status")
+
+        except Exception as e:
+            print(f"❌ Error configurando pipeline: {e}")
 
     async def speak_text(self, text: str, voice: Optional[str] = None,
                         rate: Optional[int] = None, pitch: Optional[float] = None,
@@ -837,6 +1354,61 @@ CoquiTTS (v3.0.0+):
 
         if args.model_status:
             await self.show_model_status()
+            return
+
+        # Handle Phase B: Voice Cloning Commands
+        if args.clone_voice:
+            if not args.voice_name:
+                print("❌ Error: --voice-name es requerido con --clone-voice")
+                sys.exit(1)
+            await self.clone_voice(
+                audio_file=args.clone_voice,
+                voice_name=args.voice_name,
+                language=args.clone_language,
+                quality=args.clone_quality
+            )
+            return
+
+        if args.list_cloned:
+            await self.list_cloned_voices()
+            return
+
+        if args.delete_clone:
+            await self.delete_cloned_voice(args.delete_clone)
+            return
+
+        if args.cloning_status:
+            await self.show_cloning_status()
+            return
+
+        if args.enable_cloning:
+            await self.toggle_cloning(enable=True)
+            return
+
+        if args.disable_cloning:
+            await self.toggle_cloning(enable=False)
+            return
+
+        # Handle Phase C: Audio Pipeline Commands
+        if args.pipeline_status:
+            await self.show_pipeline_status()
+            return
+
+        if args.enable_pipeline:
+            await self.toggle_pipeline(enable=True)
+            return
+
+        if args.disable_pipeline:
+            await self.toggle_pipeline(enable=False)
+            return
+
+        if args.process_audio:
+            await self.process_audio_file(
+                input_file=args.process_audio,
+                output_format=args.output_format,
+                target_language=args.target_language,
+                audio_quality=args.audio_quality
+            )
             return
 
         # Handle voice listing with engine support

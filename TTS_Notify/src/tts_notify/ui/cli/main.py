@@ -21,6 +21,7 @@ from ...core.models import (
     VoiceCloningRequest, VoiceCloningResponse
 )
 from ...core.exceptions import TTSNotifyError, VoiceNotFoundError, ValidationError, TTSError, EngineNotAvailableError
+from ...core.installer import coqui_installer
 from ...utils.logger import setup_logging, get_logger
 
 
@@ -93,6 +94,13 @@ Audio Pipeline (Phase C):
   tts-notify --process-audio input.wav --output-format mp3
   tts-notify --process-audio input.wav --target-language es --audio-quality ultra
   tts-notify --enable-pipeline                     # Activar pipeline
+
+Installation & Testing:
+  tts-notify --install-coqui                      # Instalar CoquiTTS
+  tts-notify --install-coqui-gpu                   # Instalar CoquiTTS con GPU
+  tts-notify --install-all                          # Instalar todo (CoquiTTS + deps + FFmpeg)
+  tts-notify --test-installation                  # Probar instalación completa
+  tts-notify --installation-status               # Estado de la instalación
             """
         )
 
@@ -210,6 +218,43 @@ Audio Pipeline (Phase C):
             "--disable-cloning",
             action="store_true",
             help="Desactivar sistema de clonación de voz"
+        )
+
+        # Installation Commands
+        parser.add_argument(
+            "--install-coqui",
+            action="store_true",
+            help="Instalar CoquiTTS y dependencias básicas"
+        )
+        parser.add_argument(
+            "--install-coqui-gpu",
+            action="store_true",
+            help="Instalar CoquiTTS con soporte GPU (requiere CUDA)"
+        )
+        parser.add_argument(
+            "--install-all",
+            action="store_true",
+            help="Instalar todas las dependencias (CoquiTTS + audio + FFmpeg)"
+        )
+        parser.add_argument(
+            "--install-all-gpu",
+            action="store_true",
+            help="Instalar todas las dependencias con soporte GPU"
+        )
+        parser.add_argument(
+            "--install-deps",
+            action="store_true",
+            help="Instalar dependencias de audio (librosa, soundfile, etc.)"
+        )
+        parser.add_argument(
+            "--test-installation",
+            action="store_true",
+            help="Probar instalación completa de CoquiTTS"
+        )
+        parser.add_argument(
+            "--installation-status",
+            action="store_true",
+            help="Mostrar estado actual de instalación"
         )
 
         # Phase C: Audio Pipeline Commands
@@ -959,6 +1004,371 @@ Audio Pipeline (Phase C):
         except Exception as e:
             print(f"❌ Error configurando pipeline: {e}")
 
+    # Installation & Testing Methods
+
+    async def install_coqui_tts(self, use_gpu: bool = False) -> None:
+        """Install CoquiTTS automatically"""
+        try:
+            print(f"🚀 Iniciando instalación de CoquiTTS...")
+            print(f"   GPU: {'Sí' if use_gpu else 'No'}")
+
+            result = await coqui_installer.install_coqui_tts(use_gpu=use_gpu)
+
+            if result.success:
+                print(f"\n✅ CoquiTTS instalado exitosamente!")
+                print(f"   Componente: {result.component}")
+                print(f"   Versión: {result.version}")
+                print(f"   Ubicación: {result.installed_path}")
+
+                print(f"\n💡 Ahora puedes usar el motor CoquiTTS:")
+                print(f"   tts-notify --engine coqui \"Hola mundo\"")
+                print(f"   tts-notify --list-languages")
+
+                # Re-initialize engines to pick up CoquiTTS
+                await self.initialize_engines()
+                self._engines_initialized = False  # Force re-initialization
+                await self.initialize_engines()
+
+                # Interactive language selection
+                try:
+                    coqui_engine = engine_registry.get("coqui")
+                    if coqui_engine:
+                        print(f"\n🌍 Opciones de Modelos de Voz:")
+                        print("   1. Modelo Multi-lenguaje (Recomendado)")
+                        print("      • Soporta 17 idiomas (en, es, fr, de, etc.)")
+                        print("      • Mejor calidad y clonación de voz")
+                        print("      • Tamaño: ~2.0 GB")
+                        print("   2. Modelo de Idioma Específico")
+                        print("      • Solo un idioma")
+                        print("      • Menor calidad, sin clonación")
+                        print("      • Tamaño: ~100-500 MB")
+                        print("   3. Omitir descarga por ahora")
+                        
+                        choice = input("\n   Seleccione una opción [1-3]: ").strip()
+                        
+                        if choice == "1":
+                            print(f"\n⬇️  Iniciando descarga del modelo multi-lenguaje...")
+                            success = await coqui_engine.download_model(force=True)
+                            if success:
+                                print(f"✅ Modelo descargado exitosamente!")
+                            else:
+                                print(f"❌ Error en la descarga del modelo.")
+                                
+                        elif choice == "2":
+                            single_models = coqui_engine.get_single_language_models()
+                            available_langs = sorted(single_models.keys())
+                            
+                            print(f"\n🗣️  Idiomas disponibles:")
+                            for i, lang in enumerate(available_langs, 1):
+                                print(f"   {i}. {lang}")
+                                
+                            lang_idx = input(f"\n   Seleccione idioma [1-{len(available_langs)}]: ").strip()
+                            
+                            try:
+                                idx = int(lang_idx) - 1
+                                if 0 <= idx < len(available_langs):
+                                    selected_lang = available_langs[idx]
+                                    models = single_models[selected_lang]
+                                    
+                                    success = False
+                                    for model_name in models:
+                                        print(f"\n⬇️  Intentando descargar modelo: {model_name}...")
+                                        if await coqui_engine.download_model(model_name=model_name, force=True):
+                                            print(f"✅ Modelo para {selected_lang} descargado exitosamente!")
+                                            print(f"💡 Para usar este modelo:")
+                                            print(f"   tts-notify --engine coqui --model \"{model_name}\" ...")
+                                            success = True
+                                            break
+                                        else:
+                                            print(f"⚠️  Fallo la descarga de {model_name}, intentando siguiente...")
+                                    
+                                    if not success:
+                                        print(f"❌ No se pudo descargar ningún modelo para {selected_lang}.")
+                                else:
+                                    print("❌ Selección inválida.")
+                            except ValueError:
+                                print("❌ Entrada inválida.")
+                        
+                        elif choice == "3":
+                            print("\nℹ️  Omitiendo descarga de modelos adicionales.")
+                            
+                        else:
+                            print(f"\n❌ Opción no válida: '{choice}'. Seleccione 1, 2 o 3.")
+                                
+                except Exception as e:
+                    print(f"⚠️  Error en selección de idiomas: {e}")
+
+            else:
+                print(f"\n❌ Error instalando CoquiTTS: {result.error}")
+                if result.warnings:
+                    print("\nAdvertencias:")
+                    for warning in result.warnings:
+                        print(f"   ⚠️  {warning}")
+
+        except Exception as e:
+            print(f"❌ Error en instalación: {e}")
+            sys.exit(1)
+
+    async def install_all_dependencies(self, use_gpu: bool = False, include_ffmpeg: bool = False) -> None:
+        """Install all dependencies for full functionality"""
+        try:
+            print(f"🚀 Iniciando instalación completa de dependencias...")
+            print(f"   GPU: {'Sí' if use_gpu else 'No'}")
+            print(f"   FFmpeg: {'Sí' if include_ffmpeg else 'No'}")
+
+            results = await coqui_installer.install_all_dependencies(
+                use_gpu=use_gpu,
+                include_ffmpeg=include_ffmpeg
+            )
+
+            # Display results
+            print(f"\n📊 Resultados de la instalación:")
+            all_success = True
+
+            for component, result in results.items():
+                status = "✅" if result.success else "❌"
+                print(f"   {status} {component}: ", end="")
+
+                if result.success:
+                    if result.version:
+                        print(f"v{result.version} ({result.installed_path})")
+                    else:
+                        print("Instalado")
+                else:
+                    print(f"Error - {result.error}")
+                    all_success = False
+
+            if all_success:
+                print(f"\n🎉 ¡Todas las dependencias instaladas exitosamente!")
+                print(f"\n⚠️  IMPORTANTE: Debes activar el entorno virtual para usar CoquiTTS:")
+                print(f"   source TTS_Notify/venv312/bin/activate")
+                print(f"\n💡 Sistema listo para uso completo (una vez activado):")
+                print(f"   tts-notify --engine coqui \"Hello world\"")
+                print(f"   tts-notify --pipeline-status")
+                print(f"   tts-notify --clone-voice sample.wav --voice-name MiVoz")
+
+                # Re-initialize engines
+                await self.initialize_engines()
+                self._engines_initialized = False  # Force re-initialization
+                await self.initialize_engines()
+
+                # Interactive language selection
+                try:
+                    coqui_engine = engine_registry.get("coqui")
+                    if coqui_engine:
+                        print(f"\n🌍 Opciones de Modelos de Voz:")
+                        print("   1. Modelo Multi-lenguaje (Recomendado)")
+                        print("      • Soporta 17 idiomas (en, es, fr, de, etc.)")
+                        print("      • Mejor calidad y clonación de voz")
+                        print("      • Tamaño: ~2.0 GB")
+                        print("   2. Modelo de Idioma Específico")
+                        print("      • Solo un idioma")
+                        print("      • Menor calidad, sin clonación")
+                        print("      • Tamaño: ~100-500 MB")
+                        print("   3. Omitir descarga por ahora")
+                        
+                        choice = input("\n   Seleccione una opción [1-3]: ").strip()
+                        
+                        if choice == "1":
+                            print(f"\n⬇️  Iniciando descarga del modelo multi-lenguaje...")
+                            success = await coqui_engine.download_model(force=True)
+                            if success:
+                                print(f"✅ Modelo descargado exitosamente!")
+                            else:
+                                print(f"❌ Error en la descarga del modelo.")
+                                
+                        elif choice == "2":
+                            single_models = coqui_engine.get_single_language_models()
+                            available_langs = sorted(single_models.keys())
+                            
+                            print(f"\n🗣️  Idiomas disponibles:")
+                            for i, lang in enumerate(available_langs, 1):
+                                print(f"   {i}. {lang}")
+                                
+                            lang_idx = input(f"\n   Seleccione idioma [1-{len(available_langs)}]: ").strip()
+                            
+                            try:
+                                idx = int(lang_idx) - 1
+                                if 0 <= idx < len(available_langs):
+                                    selected_lang = available_langs[idx]
+                                    models = single_models[selected_lang]
+                                    
+                                    success = False
+                                    for model_name in models:
+                                        print(f"\n⬇️  Intentando descargar modelo: {model_name}...")
+                                        if await coqui_engine.download_model(model_name=model_name, force=True):
+                                            print(f"✅ Modelo para {selected_lang} descargado exitosamente!")
+                                            print(f"💡 Para usar este modelo:")
+                                            print(f"   tts-notify --engine coqui --model \"{model_name}\" ...")
+                                            success = True
+                                            break
+                                        else:
+                                            print(f"⚠️  Fallo la descarga de {model_name}, intentando siguiente...")
+                                    
+                                    if not success:
+                                        print(f"❌ No se pudo descargar ningún modelo para {selected_lang}.")
+                                else:
+                                    print("❌ Selección inválida.")
+                            except ValueError:
+                                print("❌ Entrada inválida.")
+
+                        elif choice == "3":
+                            print("\nℹ️  Omitiendo descarga de modelos adicionales.")
+                            
+                        else:
+                            print(f"\n❌ Opción no válida: '{choice}'. Seleccione 1, 2 o 3.")
+                except Exception as e:
+                    print(f"⚠️  Error en selección de idiomas: {e}")
+
+            else:
+                print(f"\n⚠️  Algunas dependencias fallaron. Revisa los errores arriba.")
+                print(f"   Puedes instalar individualmente con:")
+                print(f"   tts-notify --install-coqui")
+                print(f"   tts-notify --install-deps")
+
+        except Exception as e:
+            print(f"❌ Error en instalación completa: {e}")
+            sys.exit(1)
+
+    async def test_installation(self) -> None:
+        """Test complete installation"""
+        try:
+            print(f"🧪 Iniciando pruebas de instalación completa...")
+
+            test_results = await coqui_installer.test_complete_installation()
+
+            print(f"\n📊 Resultados de las pruebas:")
+
+            # CoquiTTS
+            coqui_result = test_results["coqui_tts"]
+            coqui_status = "✅" if coqui_result.success else "❌"
+            print(f"   {coqui_status} CoquiTTS: ", end="")
+            if coqui_result.success:
+                metadata = coqui_result.metadata or {}
+                if "available_models" in metadata:
+                    print(f"Funciona ({metadata['available_models']} modelos)")
+                else:
+                    print("Funciona")
+            else:
+                print(f"Falló - {coqui_result.error}")
+
+            # Audio Dependencies
+            audio_result = test_results["audio_deps"]
+            audio_status = "✅" if audio_result.success else "❌"
+            print(f"   {audio_status} Deps de audio: ", end="")
+            if audio_result.success:
+                print("Funcionan correctamente")
+            else:
+                print(f"Falló - {audio_result.error}")
+
+            # FFmpeg
+            ffmpeg_result = test_results["ffmpeg"]
+            ffmpeg_status = "✅" if ffmpeg_result.success else "❌"
+            print(f"   {ffmpeg_status} FFmpeg: ", end="")
+            if ffmpeg_result.success:
+                print("Funciona correctamente")
+            else:
+                print(f"Falló - {ffmpeg_result.error}")
+
+            # Overall
+            overall_status = "✅" if test_results["overall_success"] else "❌"
+            print(f"\n   {overall_status} Estado general: ", end="")
+            if test_results["overall_success"]:
+                print("¡Sistema completamente funcional!")
+                print(f"\n💡 Prueba las características:")
+                print(f"   tts-notify --engine coqui \"Test en francés\" --language fr")
+                print(f"   tts-notify --process-audio audio.wav --output-format mp3")
+                print(f"   tts-notify --pipeline-status")
+            else:
+                print("❌ Sistema no completamente funcional")
+
+        except Exception as e:
+            print(f"❌ Error en pruebas: {e}")
+            sys.exit(1)
+
+    async def install_audio_dependencies(self) -> None:
+        """Install audio processing dependencies only"""
+        try:
+            print(f"📦 Instalando dependencias de procesamiento de audio...")
+
+            results = await coqui_installer.install_audio_dependencies()
+
+            print(f"\n📊 Resultados de la instalación:")
+            all_success = True
+
+            for result in results:
+                status = "✅" if result.success else "❌"
+                print(f"   {status} {result.component}: ", end="")
+
+                if result.success:
+                    print("Instalado correctamente")
+                else:
+                    print(f"Error - {result.error}")
+                    all_success = False
+
+            if all_success:
+                print(f"\n🎉 ¡Dependencias de audio instaladas exitosamente!")
+                print(f"\n🎛️ Sistema listo para procesamiento de audio avanzado:")
+                print(f"   tts-notify --process-audio input.wav --output-format mp3")
+                print(f"   tts-notify --pipeline-status")
+            else:
+                print(f"\n⚠️  Algunas dependencias fallaron. Revisa los errores arriba.")
+
+        except Exception as e:
+            print(f"❌ Error en instalación de dependencias: {e}")
+            sys.exit(1)
+
+    async def show_installation_status(self) -> None:
+        """Show current installation status"""
+        try:
+            print(f"📊 Estado Actual de la Instalación:")
+            print("=" * 50)
+
+            status = await coqui_installer.get_installation_status()
+
+            print(f"\n🐍 Sistema:")
+            print(f"   • Python: {status['python_version']}")
+            print(f"   • Plataforma: {status['platform']}")
+
+            print(f"\n🤖 CoquiTTS:")
+            coqui_status = "✅ Instalado" if status["coqui_tts_installed"] else "❌ No instalado"
+            print(f"   • Estado: {coqui_status}")
+            if status["coqui_tts_installed"]:
+                try:
+                    version = coqui_installer._get_coqui_version()
+                    print(f"   • Versión: {version}")
+                except:
+                    print(f"   • Versión: Desconocida")
+
+            print(f"\n🎵 Dependencias de Audio:")
+            audio_deps = status["audio_deps"]
+            for dep_name, installed in audio_deps.items():
+                status_icon = "✅" if installed else "❌"
+                print(f"   • {dep_name}: {status_icon}")
+
+            print(f"\n🎬 FFmpeg:")
+            ffmpeg_status = "✅ Disponible" if status["ffmpeg_available"] else "❌ No disponible"
+            print(f"   • Estado: {ffmpeg_status}")
+
+            # Recommendations
+            print(f"\n💡 Recomendaciones:")
+            if not status["coqui_tts_installed"]:
+                print(f"   • Instalar CoquiTTS: tts-notify --install-coqui")
+
+            if not all(audio_deps.values()):
+                missing = [dep for dep, installed in audio_deps.items() if not installed]
+                print(f"   • Instalar dependencias: tts-notify --install-deps")
+                print(f"     Faltantes: {', '.join(missing)}")
+
+            if not status["ffmpeg_available"]:
+                print(f"   • Instalar FFmpeg: tts-notify --install-ffmpeg")
+
+            if status["coqui_tts_installed"] and all(audio_deps.values()):
+                print(f"   • Sistema listo: tts-notify --engine coqui \"Prueba\"")
+
+        except Exception as e:
+            print(f"❌ Error obteniendo estado: {e}")
+
     async def speak_text(self, text: str, voice: Optional[str] = None,
                         rate: Optional[int] = None, pitch: Optional[float] = None,
                         volume: Optional[float] = None, engine: Optional[str] = None,
@@ -1387,6 +1797,35 @@ Audio Pipeline (Phase C):
 
         if args.disable_cloning:
             await self.toggle_cloning(enable=False)
+            return
+
+        # Handle Installation Commands
+        if args.install_coqui:
+            await self.install_coqui_tts(use_gpu=False)
+            return
+
+        if args.install_coqui_gpu:
+            await self.install_coqui_tts(use_gpu=True)
+            return
+
+        if args.install_all:
+            await self.install_all_dependencies(use_gpu=False, include_ffmpeg=True)
+            return
+
+        if args.install_all_gpu:
+            await self.install_all_dependencies(use_gpu=True, include_ffmpeg=True)
+            return
+
+        if args.test_installation:
+            await self.test_installation()
+            return
+
+        if args.installation_status:
+            await self.show_installation_status()
+            return
+
+        if args.install_deps:
+            await self.install_audio_dependencies()
             return
 
         # Handle Phase C: Audio Pipeline Commands

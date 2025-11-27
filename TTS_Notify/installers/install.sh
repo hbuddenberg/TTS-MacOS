@@ -1,6 +1,6 @@
 #!/bin/bash
-# TTS Notify v2.0.0 - Cross-platform Installer Script
-# Supports macOS and Linux systems
+# TTS Notify v3.0.0 - Cross-platform Installer Script with CoquiTTS Support
+# Supports macOS and Linux systems with AI-powered TTS installation
 
 set -e
 
@@ -9,14 +9,16 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+PURPLE='\033[0;35m'
 NC='\033[0m' # No Color
 
 # Project directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
-echo -e "${BLUE}🔧 TTS Notify v2.0.0 - Cross-platform Installer${NC}"
+echo -e "${PURPLE}🚀 TTS Notify v3.0.0 - AI-Powered TTS Installer${NC}"
 echo -e "${BLUE}📍 Project: $PROJECT_DIR${NC}"
+echo -e "${YELLOW}✨ NEW: CoquiTTS integration with 17+ languages & voice cloning${NC}"
 echo
 
 # Function to print colored output
@@ -115,24 +117,119 @@ run_installer() {
 
     cd "$PROJECT_DIR"
 
-    if [ -f "src/installer/installer.py" ]; then
-        python3 src/installer/installer.py "$mode"
-    else
-        print_error "Installer script not found"
-        return 1
-    fi
+    case "$mode" in
+        "all"|"coqui"|"complete")
+            print_info "Installing TTS Notify v3.0.0 with CoquiTTS support..."
+
+            # Create virtual environment
+            if [ ! -d "venv312" ]; then
+                print_info "Creating Python 3.12 virtual environment..."
+                if command -v python3.12 &> /dev/null; then
+                    python3.12 -m venv venv312
+                elif python3 -c "import sys; exit(0 if sys.version_info >= (3, 12) and sys.version_info < (3, 14) else 1)"; then
+                    python3 -m venv venv312
+                else
+                    print_error "Python 3.12-3.13 required for CoquiTTS"
+                    return 1
+                fi
+            fi
+
+            # Activate virtual environment and install
+            source venv312/bin/activate
+            
+            # Use UV if available
+            if check_uv; then
+                print_info "Using UV for installation..."
+                uv pip install --upgrade pip
+                uv pip install -e .
+            else
+                pip install --upgrade pip
+                pip install -e .
+            fi
+
+            # Install CoquiTTS using our new installation system
+            print_info "Installing CoquiTTS and dependencies..."
+            if tts-notify --install-all; then
+                print_status "CoquiTTS installation completed"
+            else
+                print_warning "CoquiTTS installation encountered issues, but basic functionality is available"
+            fi
+
+            # Test installation
+            print_info "Testing installation..."
+            tts-notify --test-installation
+
+            print_status "TTS Notify v3.0.0 with CoquiTTS installed successfully!"
+            ;;
+        "development"|"dev")
+            print_info "Installing development environment..."
+            if [ ! -d "venv" ]; then
+                python3 -m venv venv
+            fi
+            source venv/bin/activate
+            
+            # Use UV if available
+            if check_uv; then
+                print_info "Using UV for installation..."
+                uv pip install --upgrade pip
+                uv pip install -e ".[dev]"
+            else
+                pip install --upgrade pip
+                pip install -e ".[dev]"
+            fi
+            print_status "Development environment installed"
+            ;;
+        "production"|"prod")
+            print_info "Installing for production use..."
+            if command -v uv &> /dev/null; then
+                uv pip install -e ".[api,mcp]"
+            else
+                pip3 install -e ".[api,mcp]"
+            fi
+            print_status "Production installation completed"
+            ;;
+        "mcp")
+            print_info "Installing MCP server mode..."
+            if command -v uv &> /dev/null; then
+                uv pip install -e ".[mcp]"
+            else
+                pip3 install -e ".[mcp]"
+            fi
+            print_status "MCP server installation completed"
+            ;;
+        "uninstall")
+            print_info "Uninstalling TTS Notify..."
+            # Remove virtual environments
+            [ -d "venv" ] && rm -rf venv
+            [ -d "venv312" ] && rm -rf venv312
+            [ -d "venv313" ] && rm -rf venv313
+            # Remove package if installed globally
+            pip3 uninstall -y tts-notify 2>/dev/null || true
+            print_status "Uninstallation completed"
+            ;;
+        *)
+            print_error "Unknown installation mode: $mode"
+            return 1
+            ;;
+    esac
 }
 
 # Function to show usage
 show_usage() {
-    echo -e "${BLUE}TTS Notify v2.0.0 Installation Options:${NC}"
+    echo -e "${BLUE}TTS Notify v3.0.0 Installation Options:${NC}"
     echo
-    echo "  1) Development - Install for development with virtual environment"
-    echo "  2) Production  - Install CLI globally for all users"
-    echo "  3) MCP Server  - Install for Claude Desktop integration"
-    echo "  4) Complete    - Install all components"
-    echo "  5) Uninstall   - Remove TTS Notify completely"
+    echo "  1) Development    - Install for development with virtual environment"
+    echo "  2) Production     - Install CLI globally for all users"
+    echo "  3) MCP Server     - Install for Claude Desktop integration"
+    echo "  4) Complete/Coqui - Install ALL features including CoquiTTS AI voices"
+    echo "  5) Uninstall      - Remove TTS Notify completely"
     echo "  6) Exit"
+    echo
+    echo -e "${YELLOW}🚀 NEW in v3.0.0: CoquiTTS AI-powered TTS with multi-language support${NC}"
+    echo "   • 17 languages supported (English, Spanish, French, German, etc.)"
+    echo "   • Voice cloning capabilities"
+    echo "   • Advanced audio processing pipeline"
+    echo "   • Automated installation and testing"
     echo
 }
 
@@ -205,12 +302,25 @@ main() {
         # Command line mode
         mode="$1"
         case $mode in
-            development|production|mcp|all|uninstall)
-                run_installer "$mode"
+            development|dev)
+                run_installer "development"
+                ;;
+            production|prod)
+                run_installer "production"
+                ;;
+            mcp)
+                run_installer "mcp"
+                ;;
+            all|coqui|complete)
+                run_installer "all"
+                ;;
+            uninstall)
+                run_installer "uninstall"
                 ;;
             *)
                 print_error "Invalid mode: $mode"
-                echo "Valid modes: development, production, mcp, all, uninstall"
+                echo "Valid modes: development, production, mcp, all/coqui, uninstall"
+                echo "New v3.0.0 modes: coqui (install with AI voices), complete (full installation)"
                 exit 1
                 ;;
         esac
@@ -234,6 +344,15 @@ install_mcp() {
 
 install_all() {
     main "all"
+}
+
+# New v3.0.0 convenience functions
+install_coqui() {
+    main "coqui"
+}
+
+install_complete() {
+    main "complete"
 }
 
 uninstall() {

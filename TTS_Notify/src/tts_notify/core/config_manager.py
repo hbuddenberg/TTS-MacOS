@@ -29,7 +29,9 @@ class TTSConfig(BaseModel):
     TTS_NOTIFY_VOLUME: float = Field(default=1.0, ge=0.0, le=1.0, description="Volume multiplier (0.0-1.0)")
 
     # CoquiTTS Engine Configuration
-    TTS_NOTIFY_COQUI_MODEL: str = Field(default="tts_models/es/multi-dataset/xtts_v2", description="CoquiTTS model name")
+    TTS_NOTIFY_COQUI_MODEL: str = Field(default="tts_models/multilingual/multi-dataset/xtts_v2", description="CoquiTTS model name")
+    TTS_NOTIFY_COQUI_FALLBACK_MODEL: Optional[str] = Field(default=None, description="Fallback CoquiTTS model if main model fails")
+    TTS_NOTIFY_COQUI_AUTO_FALLBACK: bool = Field(default=True, description="Automatically fallback to language-specific models if multilingual fails")
     TTS_NOTIFY_COQUI_DEVICE: str = Field(default="auto", pattern=r"^(auto|cpu|cuda)$", description="CoquiTTS device")
     TTS_NOTIFY_COQUI_USE_GPU: bool = Field(default=True, description="Use GPU acceleration for CoquiTTS")
     TTS_NOTIFY_COQUI_AUTO_INIT: bool = Field(default=True, description="Auto-initialize CoquiTTS on startup")

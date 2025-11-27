@@ -510,7 +510,20 @@ async def bootstrap_engines(config=None):
         except ImportError:
             logger.warning("CoquiTTS dependencies not available. Install with: pip install coqui-tts")
         except Exception as e:
-            logger.error(f"Failed to initialize CoquiTTS engine: {e}")
+            logger.warning(f"Failed to register CoquiTTS engine: {e}")
+
+    # Also try to register CoquiTTS if available (even if not explicitly requested)
+    else:
+        try:
+            from tts_notify.core.coqui_engine import CoquiTTSEngine
+            coqui_engine = CoquiTTSEngine(config.TTS_NOTIFY_COQUI_MODEL)
+            if coqui_engine.is_available():
+                engine_registry.register(coqui_engine)
+                logger.info("Auto-registered available CoquiTTS engine")
+        except ImportError:
+            logger.debug("CoquiTTS not available")
+        except Exception as e:
+            logger.debug(f"CoquiTTS auto-registration failed: {e}")
 
 
 # Global engine registry instance

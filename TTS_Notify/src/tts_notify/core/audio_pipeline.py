@@ -38,7 +38,7 @@ from .models import (
     AudioFormat, Voice, TTSRequest, TTSResponse,
     Language, VoiceQuality
 )
-from .exceptions import TTSError, ValidationError, ProcessingError
+from .exceptions import TTSError, ValidationError, AudioProcessingError
 from .config_manager import TTSConfig, config_manager
 
 logger = logging.getLogger(__name__)
@@ -285,7 +285,7 @@ class AudioProcessor:
             processing_time = time.time() - start_time
             error_msg = f"Audio pipeline failed: {str(e)}"
             logger.error(error_msg)
-            raise ProcessingError(error_msg)
+            raise AudioProcessingError(error_msg)
 
     async def _validate_input(self, audio_data: bytes, format: AudioFormat) -> bytes:
         """Validate input audio data"""
@@ -664,7 +664,7 @@ class AudioProcessor:
 
                 return converted_data
             else:
-                raise ProcessingError(f"FFmpeg conversion failed: {stderr.decode()}")
+                raise AudioProcessingError(f"FFmpeg conversion failed: {stderr.decode()}")
 
         except Exception as e:
             logger.error(f"FFmpeg conversion error: {e}")

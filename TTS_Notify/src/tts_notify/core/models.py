@@ -37,6 +37,14 @@ class Language(Enum):
     JAPANESE = "ja"
     CHINESE = "zh"
     KOREAN = "ko"
+    RUSSIAN = "ru"
+    POLISH = "pl"
+    DUTCH = "nl"
+    CZECH = "cs"
+    ARABIC = "ar"
+    TURKISH = "tr"
+    HUNGARIAN = "hu"
+    FINNISH = "fi"
     UNKNOWN = "unknown"
 
 

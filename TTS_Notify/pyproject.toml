@@ -7,7 +7,7 @@ name = "tts-notify"
 version = "3.0.0"
 description = "Modular Text-to-Speech notification system for macOS with CLI, MCP, REST API, and CoquiTTS AI-powered voices"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.10,<3.14"
 license = "MIT"
 keywords = ["tts", "text-to-speech", "macos", "voice", "speech", "audio", "cli", "mcp", "api", "notifications", "claude-desktop", "coqui-tts", "ai-voices", "multi-language"]
 authors = [
@@ -31,7 +31,6 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
-    "Programming Language :: Python :: 3.14",
     "Topic :: Multimedia :: Sound/Audio :: Speech",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Utilities",

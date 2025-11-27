@@ -66,7 +66,7 @@ class ModelInfo:
 class CoquiTTSEngine:
     """CoquiTTS-based TTS engine with multi-language and model management"""
 
-    def __init__(self, model_name: str = "tts_models/es/multi-dataset/xtts_v2"):
+    def __init__(self, model_name: str = "tts_models/multilingual/multi-dataset/xtts_v2"):
         self.name = "coqui"
         self.model_name = model_name
         self._tts = None
@@ -75,14 +75,14 @@ class CoquiTTSEngine:
 
         # Multi-language model capabilities based on research
         self.multi_language_models = {
-            "tts_models/es/multi-dataset/xtts_v2": ModelInfo(
+            "tts_models/multilingual/multi-dataset/xtts_v2": ModelInfo(
                 languages=["en", "es", "fr", "de", "it", "pt", "nl", "pl", "ru", "zh", "ja", "ko", "cs", "ar", "tr", "hu", "fi"],
                 size_gb=2.0,
                 speakers=17,
                 quality="enhanced",
                 streaming=True
             ),
-            "tts_models/multilingual/multi-dataset/xtts_v2": ModelInfo(
+            "tts_models/multilingual/multi-dataset/xtts_v1.1": ModelInfo(
                 languages=["en", "es", "fr", "de", "it", "pt", "nl", "pl", "ru", "zh", "ja", "ko"],
                 size_gb=2.2,
                 speakers=16,
@@ -93,9 +93,9 @@ class CoquiTTSEngine:
 
         # Single-language models
         self.single_language_models = {
-            "es": ["tts_models/esu/fairseq/vits", "tts_models/es/css10/vits"],
+            "es": ["tts_models/es/css10/vits", "tts_models/esu/fairseq/vits"],
             "en": ["tts_models/en/ljspeech/tacotron2-DDC", "tts_models/en/vctk/vits"],
-            "fr": ["tts_models/fr/multi-dataset/xtts_v2"],
+            "fr": ["tts_models/fr/css10/vits", "tts_models/fr/multi-dataset/xtts_v2"],
             "de": ["tts_models/de/thorsten-vits"],
             "it": ["tts_models/it/mai_female_vits", "tts_models/it/mai_male"],
             "pt": ["tts_models/pt/male/female_vits"],
@@ -134,9 +134,9 @@ class CoquiTTSEngine:
                 "CoquiTTS not available. Install with: pip install coqui-tts"
             )
 
-        try:
-            config = self.config_manager.get_config()
+        config = self.config_manager.get_config()
 
+        try:
             # Device detection with fallback
             if config.TTS_NOTIFY_COQUI_USE_GPU and torch.cuda.is_available():
                 self._device = "cuda"
@@ -148,16 +148,32 @@ class CoquiTTSEngine:
                 else:
                     logger.info("CoquiTTS: Using CPU")
 
-            # Asynchronous model loading
+            # Asynchronous model loading with fallback handling
             logger.info(f"CoquiTTS: Loading model {self.model_name}...")
-            self._tts = await asyncio.to_thread(
-                TTS,
-                model_name=self.model_name,
-                progress_bar=False
-            )
 
-            self._initialized = True
-            logger.info(f"CoquiTTS: Model {self.model_name} loaded successfully on {self._device}")
+            try:
+                self._tts = await self._create_tts_instance(self.model_name)
+                self._initialized = True
+                logger.info(f"CoquiTTS: Model {self.model_name} loaded successfully on {self._device}")
+            except Exception as e:
+                # Check if it's a compatibility issue
+                if 'weights only' in str(e).lower() and ('xtts' in self.model_name.lower() or 'xtts_config' in str(e)):
+                    logger.warning(f"Model {self.model_name} has compatibility issues, trying fallback...")
+
+                    if config.TTS_NOTIFY_COQUI_AUTO_FALLBACK:
+                        # Try to detect language from model name for fallback
+                        language = self._extract_language_from_model(self.model_name)
+                        if language and await self._try_fallback_model(language):
+                            self._initialized = True
+                            logger.info(f"CoquiTTS: Using fallback model for language {language}")
+                            return
+                        else:
+                            logger.error(f"All fallback models failed for multilingual {self.model_name}")
+                            raise EngineNotAvailableError("CoquiTTS", f"All models failed for {self.model_name}")
+                    else:
+                        raise EngineNotAvailableError("CoquiTTS", f"Model {self.model_name} has compatibility issues and fallback is disabled")
+                else:
+                    raise EngineNotAvailableError("CoquiTTS", f"Failed to initialize CoquiTTS: {str(e)}")
 
         except Exception as e:
             error_msg = f"Failed to initialize CoquiTTS: {str(e)}"
@@ -311,12 +327,130 @@ class CoquiTTSEngine:
         if availability.source in ["downloadable", "download_specific"]:
             try:
                 logger.info(f"Downloading model for language {language}: {availability.model}")
-                return await self._download_model(availability.model)
+                success = await self._download_model(availability.model)
+
+                # If download failed, try fallback
+                if not success and config.TTS_NOTIFY_COQUI_AUTO_FALLBACK:
+                    logger.warning(f"Failed to download {availability.model}, trying fallback...")
+                    return await self._try_fallback_model(language)
+
+                return success
             except Exception as e:
                 logger.error(f"Failed to download model for {language}: {str(e)}")
+
+                # Try fallback on exception
+                if config.TTS_NOTIFY_COQUI_AUTO_FALLBACK:
+                    logger.warning(f"Exception during download, trying fallback...")
+                    return await self._try_fallback_model(language)
+
                 return False
 
         return False
+
+    async def _try_fallback_model(self, language: str) -> bool:
+        """Try to fallback to a language-specific model"""
+        config = self.config_manager.get_config()
+
+        # Get fallback model from config or use language-specific default
+        fallback_model = config.TTS_NOTIFY_COQUI_FALLBACK_MODEL
+        if not fallback_model:
+            fallback_model = self._get_language_specific_model(language)
+
+        if not fallback_model:
+            logger.error(f"No fallback model available for language {language}")
+            return False
+
+        logger.info(f"Trying fallback model: {fallback_model}")
+
+        # Temporarily replace the model name
+        original_model = self.model_name
+        self.model_name = fallback_model
+
+        try:
+            # Try to load the fallback model
+            logger.info(f"Loading fallback model for {language}: {fallback_model}")
+            temp_tts = await self._create_tts_instance(fallback_model)
+
+            # If successful, permanently switch to fallback model
+            self._tts = temp_tts
+            self._initialized = True
+            logger.info(f"Fallback model {fallback_model} loaded successfully for language {language}")
+            return True
+
+        except Exception as e:
+            # Restore original model on failure
+            self.model_name = original_model
+            logger.error(f"Fallback model {fallback_model} also failed: {str(e)}")
+            return False
+
+    def _get_language_specific_model(self, language: str) -> Optional[str]:
+        """Get language-specific model fallback"""
+        language_models = {
+            "es": "tts_models/es/css10/vits",
+            "en": "tts_models/en/vctk/vits",
+            "fr": "tts_models/fr/css10/vits",
+            "de": "tts_models/de/thorsten-vits",
+            "it": "tts_models/it/mai_female_vits",
+            "pt": "tts_models/pt/male/female_vits",
+            "nl": "tts_models/nl/male/female_vits",
+            "pl": "tts_models/pl/male/female_vits",
+            "tr": "tts_models/tr/common-voice-gpu_vits",
+            "cs": "tts_models/cs/cv-vits",
+            "ar": "tts_models/ar/kokoro-vits",
+            "hu": "tts_models/hu/bemea_vits",
+            "fi": "tts_models/fi/sami_tts_vits",
+            "ja": "tts_models/ja/kokoro-tacotron2-DDC",
+            "ko": "tts_models/ko/kokoro-vits",
+            "zh": "tts_models/zh/baker/tacotron2-DDC-GST",
+            "ru": "tts_models/ru/multi-dataset/xtts_v2"
+        }
+
+        return language_models.get(language)
+
+    def _extract_language_from_model(self, model_name: str) -> Optional[str]:
+        """Extract language code from model name"""
+        model_lower = model_name.lower()
+        if 'es/' in model_lower:
+            return 'es'
+        elif 'en/' in model_lower:
+            return 'en'
+        elif 'fr/' in model_lower:
+            return 'fr'
+        elif 'de/' in model_lower:
+            return 'de'
+        elif 'it/' in model_lower:
+            return 'it'
+        elif 'pt/' in model_lower:
+            return 'pt'
+        elif 'nl/' in model_lower:
+            return 'nl'
+        elif 'pl/' in model_lower:
+            return 'pl'
+        elif 'tr/' in model_lower:
+            return 'tr'
+        elif 'cs/' in model_lower:
+            return 'cs'
+        elif 'ar/' in model_lower:
+            return 'ar'
+        elif 'hu/' in model_lower:
+            return 'hu'
+        elif 'fi/' in model_lower:
+            return 'fi'
+        elif 'ja/' in model_lower:
+            return 'ja'
+        elif 'ko/' in model_lower:
+            return 'ko'
+        elif 'zh/' in model_lower:
+            return 'zh'
+        elif 'ru/' in model_lower:
+            return 'ru'
+        elif 'multilingual' in model_lower or 'multi-dataset' in model_lower:
+            # For multilingual models, we need to detect the actual language
+            # from the model name or fallback to 'en'
+            if 'xtts' in model_lower:
+                return 'multilingual'  # This will trigger language detection later
+            return 'multilingual'
+        return None
 
     async def speak(self, request: TTSRequest) -> TTSResponse:
         """Convert text to speech and play it using CoquiTTS"""
@@ -349,6 +483,10 @@ class CoquiTTSEngine:
                         "engine_type": TTSEngineType.COQUI.value
                     }
                 )
+                
+                # Play audio if requested (implied by no output_path)
+                if save_response.success:
+                    await self._play_audio(audio_data)
 
             if save_response.success:
                 logger.info(f"Successfully generated speech using CoquiTTS (language: {language}, speaker: {speaker})")
@@ -417,15 +555,26 @@ class CoquiTTSEngine:
         """Get supported audio formats"""
         return self._supported_formats
 
+    def get_supported_languages(self, model_name: Optional[str] = None) -> List[str]:
+        """Get supported languages for a model"""
+        target_model = model_name or self.model_name
+        model_info = self._get_model_info(target_model)
+        if model_info:
+            return sorted(model_info.languages)
+        return ["en"]  # Default fallback
+
+    def get_single_language_models(self) -> Dict[str, List[str]]:
+        """Get available single-language models"""
+        return self.single_language_models
+
     def validate_request(self, request: TTSRequest) -> None:
         """Validate TTS request for CoquiTTS"""
         # Basic validation (parent class logic)
         if not isinstance(request, TTSRequest):
             raise ValidationError("Request must be a TTSRequest instance")
 
-        # Validate format compatibility
-        supported_formats = asyncio.run(self.get_supported_formats())
-        if request.output_format not in supported_formats:
+        # Validate format compatibility - use the cached supported formats
+        if request.output_format not in self._supported_formats:
             raise ValidationError(
                 f"Format '{request.output_format.value}' is not supported by CoquiTTS",
                 field="output_format",
@@ -433,6 +582,63 @@ class CoquiTTSEngine:
             )
 
     # Private methods
+
+    async def _play_audio(self, audio_data: bytes) -> None:
+        """Play audio data using system command"""
+        try:
+            import subprocess
+            import platform
+            
+            # Create temp file for playback
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_file:
+                temp_path = Path(temp_file.name)
+                temp_file.write(audio_data)
+                
+            try:
+                system = platform.system()
+                if system == "Darwin":  # macOS
+                    cmd = ["afplay", str(temp_path)]
+                elif system == "Linux":
+                    cmd = ["aplay", str(temp_path)]
+                else:
+                    logger.warning(f"Audio playback not supported on {system}")
+                    return
+
+                # Run playback command
+                process = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdout=asyncio.subprocess.DEVNULL,
+                    stderr=asyncio.subprocess.DEVNULL
+                )
+                await process.wait()
+                
+            finally:
+                # Clean up
+                if temp_path.exists():
+                    temp_path.unlink()
+                    
+        except Exception as e:
+            logger.error(f"Failed to play audio: {e}")
+
+    async def _create_tts_instance(self, model_name: str) -> Any:
+        """Create TTS instance with safe torch loading"""
+        # Monkeypatch torch.load to allow unsafe loading (needed for Coqui XTTS)
+        original_load = torch.load
+        
+        def safe_load(*args, **kwargs):
+            # Force weights_only=False to allow loading custom classes
+            kwargs['weights_only'] = False
+            return original_load(*args, **kwargs)
+            
+        torch.load = safe_load
+        try:
+            return await asyncio.to_thread(
+                TTS,
+                model_name=model_name,
+                progress_bar=False
+            )
+        finally:
+            torch.load = original_load
 
     def _get_cache_directory(self) -> Path:
         """Get the cache directory for models"""
@@ -455,30 +661,31 @@ class CoquiTTSEngine:
         except Exception:
             return False
 
-    async def _download_model(self, model_name: str) -> bool:
-        """Download a model (simplified - CoquiTTS handles downloads automatically)"""
+    async def download_model(self, model_name: Optional[str] = None, force: bool = False) -> bool:
+        """Download a model (public method)"""
         try:
+            target_model = model_name or self.model_name
             config = self.config_manager.get_config()
 
-            if not config.TTS_NOTIFY_AUTO_DOWNLOAD_MODELS:
-                logger.info(f"Auto-download disabled, skipping download of {model_name}")
+            if not force and not config.TTS_NOTIFY_AUTO_DOWNLOAD_MODELS:
+                logger.info(f"Auto-download disabled, skipping download of {target_model}")
                 return False
 
             # The actual download will be handled by CoquiTTS when we try to load the model
             # We'll validate by attempting to load it
-            logger.info(f"Downloading model {model_name}...")
+            logger.info(f"Downloading model {target_model}...")
 
             # Try to load the model, which will trigger download if needed
-            temp_tts = await asyncio.to_thread(TTS, model_name=model_name, progress_bar=False)
+            temp_tts = await self._create_tts_instance(target_model)
 
             # Clean up temporary instance
             del temp_tts
 
-            logger.info(f"Model {model_name} downloaded successfully")
+            logger.info(f"Model {target_model} downloaded successfully")
             return True
 
         except Exception as e:
-            logger.error(f"Failed to download model {model_name}: {str(e)}")
+            logger.error(f"Failed to download model {target_model}: {str(e)}")
             return False
 
     def _estimate_download_time(self, size_gb: float) -> int:
@@ -623,8 +830,13 @@ class CoquiTTSEngine:
             'zh': Language.CHINESE,
             'ko': Language.KOREAN,
             'ru': Language.RUSSIAN,
-            'pl': Language.RUSSIAN,  # Using existing enum
-            'nl': Language.RUSSIAN,  # Using existing enum
+            'pl': Language.POLISH,
+            'nl': Language.DUTCH,
+            'cs': Language.CZECH,
+            'ar': Language.ARABIC,
+            'tr': Language.TURKISH,
+            'hu': Language.HUNGARIAN,
+            'fi': Language.FINNISH,
         }
 
         return language_map.get(language_code.lower(), Language.ENGLISH)
@@ -636,13 +848,23 @@ class CoquiTTSEngine:
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_file:
                 temp_path = Path(temp_file.name)
 
-            # Generate speech
-            self._tts.tts_to_file(
-                text=text,
-                speaker=speaker,
-                language=language if language != "auto" else None,
-                file_path=str(temp_path)
-            )
+            # Generate speech with conditional speaker parameter
+            kwargs = {
+                "text": text,
+                "file_path": str(temp_path)
+            }
+
+            # Only add speaker parameter if model supports it
+            if hasattr(self._tts, 'speakers') and self._tts.speakers:
+                kwargs["speaker"] = speaker
+
+            # Only add language parameter if model supports it
+            if hasattr(self._tts, 'is_multi_lingual') and self._tts.is_multi_lingual:
+                if language == "auto":
+                    language = "en"  # Fallback to English if auto
+                kwargs["language"] = language
+
+            self._tts.tts_to_file(**kwargs)
 
             # Read and return audio data
             audio_data = temp_path.read_bytes()
@@ -744,13 +966,23 @@ class CoquiTTSEngine:
             output_path = request.output_path or Path.home() / "Desktop" / "coqui_output.wav"
             output_path.parent.mkdir(parents=True, exist_ok=True)
 
-            # Generate and save audio
-            self._tts.tts_to_file(
-                text=request.text,
-                speaker=speaker,
-                language=language if language != "auto" else None,
-                file_path=str(output_path)
-            )
+            # Generate and save audio with conditional parameters
+            kwargs = {
+                "text": request.text,
+                "file_path": str(output_path)
+            }
+
+            # Only add speaker parameter if model supports it
+            if hasattr(self._tts, 'speakers') and self._tts.speakers:
+                kwargs["speaker"] = speaker
+
+            # Only add language parameter if model supports it
+            if hasattr(self._tts, 'is_multi_lingual') and self._tts.is_multi_lingual:
+                if language == "auto":
+                    language = "en"  # Fallback to English if auto
+                kwargs["language"] = language
+
+            self._tts.tts_to_file(**kwargs)
 
             return TTSResponse(
                 success=True,
@@ -760,7 +992,7 @@ class CoquiTTSEngine:
                     "engine": "coqui",
                     "model": self.model_name,
                     "language": language,
-                    "speaker": speaker,
+                    "speaker": speaker if hasattr(self._tts, 'speakers') and self._tts.speakers else None,
                     "file_size": output_path.stat().st_size,
                     "engine_type": TTSEngineType.COQUI.value
                 }

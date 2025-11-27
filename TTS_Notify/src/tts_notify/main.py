@@ -11,6 +11,7 @@ import asyncio
 import sys
 from pathlib import Path
 from typing import Optional
+import os
 
 # Core imports will be done lazily to avoid import issues
 
@@ -67,7 +68,7 @@ class TTSNotifyOrchestrator:
         self._logger = get_logger(__name__)
 
         if self._logger:
-            self._logger.info("TTS Notify Orchestrator v2.0.0 initialized")
+            self._logger.info("TTS Notify Orchestrator v3.0.0 initialized")
 
     def detect_execution_mode(self) -> str:
         """Intelligently detect the execution mode"""
@@ -203,7 +204,7 @@ Para más información sobre cada modo:
         parser.add_argument(
             "--version",
             action="version",
-            version="%(prog)s 2.0.0"
+            version="%(prog)s 3.0.0"
         )
 
         return parser
@@ -223,7 +224,7 @@ Para más información sobre cada modo:
             mcp_vars = self.config_manager.get_mcp_environment_variables()
             validation_issues = self.config_manager.validate_system()
 
-            print("🔧 TTS NOTIFY v2.0.0 - INFORMACIÓN DEL SISTEMA")
+            print("🔧 TTS NOTIFY v3.0.0 - INFORMACIÓN DEL SISTEMA")
             print("=" * 60)
 
             print("\n📋 INFORMACIÓN DEL SISTEMA:")
@@ -469,8 +470,62 @@ Para más información sobre cada modo:
             sys.exit(1)
 
 
+
+def ensure_venv_execution():
+    """
+    Automatically switch to venv312 if available and not currently active.
+    This ensures CoquiTTS dependencies are available even if run from global context.
+    """
+    try:
+        # Check if we've already switched to avoid infinite loops
+        if os.environ.get("TTS_NOTIFY_RELAUNCHED"):
+            return
+
+        # Only attempt this if we are in an editable install or source checkout
+        current_file = Path(__file__).resolve()
+        # src/tts_notify/main.py -> src/tts_notify -> src -> TTS_Notify (project root)
+        if len(current_file.parents) < 3:
+            return
+            
+        project_root = current_file.parents[2]
+        venv_path = project_root / "venv312"
+        
+        # Check if venv312 exists and has python
+        venv_python = venv_path / "bin" / "python"
+        if not venv_python.exists():
+            return
+            
+        # Check if we are already running from this venv
+        current_exe = Path(sys.executable).resolve()
+        venv_python_resolved = venv_python.resolve()
+        
+        if current_exe == venv_python_resolved:
+            return
+            
+        # Check if sys.prefix matches (another way to check)
+        if str(venv_path.resolve()) in sys.prefix:
+            return
+
+        # If we are here, we need to switch
+        # We use -m tts_notify to ensure we run the module properly
+        args = [str(venv_python), "-m", "tts_notify"] + sys.argv[1:]
+        
+        # Set flag
+        os.environ["TTS_NOTIFY_RELAUNCHED"] = "1"
+        
+        # Replace current process
+        os.execv(str(venv_python), args)
+        
+    except Exception:
+        # If anything fails, just proceed with current environment
+        pass
+
+
 async def main():
     """Main entry point for TTS Notify v2"""
+    # Ensure we are in the correct venv
+    ensure_venv_execution()
+
     # Check for special modes before creating orchestrator
     if len(sys.argv) > 2 and sys.argv[1] == "--mode" and sys.argv[2] == "mcp":
         # Direct MCP mode - always use enhanced server for maximum compatibility
@@ -485,6 +540,9 @@ async def main():
 def sync_main():
     """Synchronous main entry point for CLI scripts"""
     try:
+        # Ensure we are in the correct venv
+        ensure_venv_execution()
+
         # Check for special modes before creating orchestrator
         if len(sys.argv) > 2 and sys.argv[1] == "--mode" and sys.argv[2] == "mcp":
             # Direct MCP mode - always use enhanced server for maximum compatibility
